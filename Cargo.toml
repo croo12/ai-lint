@@ -1,0 +1,16 @@
+[package]
+name = "ai-lint"
+version = "0.1.0"
+edition = "2024"
+description = "A contextual linter for AI coding agents"
+license = "MIT"
+
+[[bin]]
+name = "ai-lint"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4.5", features = ["derive"] }
+oxc_allocator = "=0.148.0"
+oxc_parser = "=0.148.0"
+oxc_span = "=0.148.0"

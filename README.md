@@ -2,6 +2,37 @@
 
 JavaScript/TypeScript 소스를 파싱하고 AST 규칙을 검사하는 Rust CLI입니다.
 
+## Claude Code / Codex hook 어댑터
+
+`packages/adapters`는 파일 수정 후와 종료 직전에 YAML 규칙을 실행하는
+TypeScript hook 라이브러리입니다. 설치·연결 예제는
+[어댑터 사용법](packages/adapters/README.md)에 있습니다.
+
+```sh
+npm run build:cli
+npm run build:adapters
+npm run test:adapters
+```
+
+빌드 후 현재 프로젝트에 hook을 자동 등록할 수 있습니다. 기존 설정은 보존·백업합니다.
+
+```sh
+npm run hooks:install -- --agent both --source-root apps/web/src
+```
+
+`--agent codex` 또는 `--agent claude-code`로 대상을 선택하고, `--workspace PATH`로
+다른 프로젝트를 지정할 수 있습니다. `--dry-run`은 변경 예정 경로만 표시합니다.
+설치 후 에이전트를 다시 열고 `/hooks`에서 등록 상태와 필요한 신뢰 승인을 확인하세요.
+
+CLI는 어댑터용 JSON 출력도 지원합니다.
+
+```sh
+cargo run -- check --format json src/App.tsx
+```
+
+JSON에는 `schemaVersion`, `exitCode`, 파일별 `syntaxErrors`·`violations`, 실행 `errors`가
+포함됩니다. 위반에는 UTF-8 바이트 범위와 1부터 시작하는 행·열(유니코드 문자 기준)이 있습니다.
+
 ## 프로젝트 구성과 웹 플레이그라운드
 
 Rust CLI는 저장소 루트에서 Cargo로 관리하고, 웹 프로젝트는 npm workspaces의

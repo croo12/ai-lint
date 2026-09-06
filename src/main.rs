@@ -9,7 +9,14 @@ use ai_lint::{
     rule_engine::RuleEngine,
     yaml_rule,
 };
-use clap::{Args, Parser, Subcommand};
+use clap::{Args, Parser, Subcommand, ValueEnum};
+use serde_json::json;
+
+#[derive(Debug, Clone, Copy, ValueEnum, PartialEq, Eq)]
+enum OutputFormat {
+    Text,
+    Json,
+}
 
 const EXIT_CLEAN: u8 = 0;
 const EXIT_FINDINGS: u8 = 1;
@@ -39,6 +46,9 @@ struct CheckArgs {
     /// YAML rule file (repeatable). When provided, replaces built-in rules.
     #[arg(long = "rules", value_name = "YAML")]
     rule_files: Vec<PathBuf>,
+    /// Output format for command-line use or integrations.
+    #[arg(long, value_enum, default_value = "text")]
+    format: OutputFormat,
 }
 
 fn main() -> ExitCode {
@@ -50,6 +60,9 @@ fn main() -> ExitCode {
 }
 
 fn run_check(args: CheckArgs) -> ExitCode {
+    if args.format == OutputFormat::Json {
+        return run_check_json(args);
+    }
     let engine = match configured_engine(&args.env_file, &args.rule_files) {
         Ok(engine) => engine,
         Err(error) => {
@@ -76,6 +89,45 @@ fn run_check(args: CheckArgs) -> ExitCode {
         eprintln!("Found {finding_count} finding(s)");
         ExitCode::from(EXIT_FINDINGS)
     }
+}
+
+fn run_check_json(args: CheckArgs) -> ExitCode {
+    let mut files = Vec::new();
+    let mut errors = Vec::new();
+    let mut findings = 0;
+    match configured_engine(&args.env_file, &args.rule_files) {
+        Err(error) => errors.push(error.to_string()),
+        Ok(engine) => {
+            for path in &args.files {
+                match Analyzer::analyze_file_with_rules(path, &engine) {
+                    Err(error) => errors.push(format!("{}: {error}", path.display())),
+                    Ok(analyzed) => {
+                        findings += analyzed.syntax_errors.len() + analyzed.rule_violations.len();
+                        let violations: Vec<_> = analyzed.rule_violations.iter().map(|v| {
+                        let prefix = analyzed.source.get(..v.span.start as usize).unwrap_or("");
+                        let line = prefix.bytes().filter(|c| *c == b'\n').count() + 1;
+                        let column = prefix.rsplit('\n').next().unwrap_or("").chars().count() + 1;
+                        json!({"ruleId": v.rule_id, "message": v.message, "start": v.span.start,
+                            "end": v.span.end, "line": line, "column": column})
+                    }).collect();
+                        files.push(json!({"path": path, "syntaxErrors": analyzed.syntax_errors, "violations": violations}));
+                    }
+                }
+            }
+        }
+    }
+    let exit_code = if !errors.is_empty() {
+        EXIT_ERROR
+    } else if findings > 0 {
+        EXIT_FINDINGS
+    } else {
+        EXIT_CLEAN
+    };
+    println!(
+        "{}",
+        json!({"schemaVersion": 1, "exitCode": exit_code, "files": files, "errors": errors})
+    );
+    ExitCode::from(exit_code)
 }
 
 fn configured_engine(

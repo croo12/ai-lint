@@ -6,3 +6,5 @@ node_modules/
 apps/*/dist/
 apps/*/test-results/
 apps/*/playwright-report/
+packages/*/dist/
+.ai-lint/backups/

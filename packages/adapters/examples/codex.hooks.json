@@ -1,0 +1,11 @@
+{
+  "hooks": {
+    "PostToolUse": [{
+      "matcher": "^(Write|Edit|apply_patch|Bash|exec_command|write_stdin)$",
+      "hooks": [{ "type": "command", "command": "node \"C:/path/to/ai-lint/packages/adapters/dist/cli.js\" --config \"C:/path/to/adapter.config.json\"", "timeout": 90 }]
+    }],
+    "Stop": [{
+      "hooks": [{ "type": "command", "command": "node \"C:/path/to/ai-lint/packages/adapters/dist/cli.js\" --config \"C:/path/to/adapter.config.json\"", "timeout": 90 }]
+    }]
+  }
+}

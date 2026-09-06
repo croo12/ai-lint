@@ -128,3 +128,35 @@ fn yaml_load_and_model_errors_exit_two() {
         assert_eq!(output.status.code(), Some(2), "{rule}");
     }
 }
+
+#[test]
+fn json_output_distinguishes_findings_and_execution_errors() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    for (file, expected) in [
+        ("effect_with_setter.tsx", 1),
+        ("effect_without_setter.tsx", 0),
+        ("missing.tsx", 2),
+    ] {
+        let output = cli()
+            .arg("--format")
+            .arg("json")
+            .arg(root.join("tests/fixtures").join(file))
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(expected));
+        assert!(output.stderr.is_empty());
+        let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(report["schemaVersion"], 1);
+        assert_eq!(report["exitCode"], expected);
+        if expected == 1 {
+            assert_eq!(
+                report["files"][0]["violations"][0]["ruleId"],
+                "no-set-state-in-effect"
+            );
+            assert_eq!(report["files"][0]["violations"][0]["line"], 5);
+        }
+        if expected == 2 {
+            assert!(!report["errors"].as_array().unwrap().is_empty());
+        }
+    }
+}

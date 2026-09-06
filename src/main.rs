@@ -7,7 +7,7 @@ use ai_lint::analyzer::Analyzer;
 use ai_lint::{
     model::{ModelConfig, OpenAiCompatibleClient},
     rule_engine::RuleEngine,
-    rules,
+    yaml_rule,
 };
 use clap::{Args, Parser, Subcommand};
 
@@ -83,7 +83,7 @@ fn configured_engine(
     rule_files: &[PathBuf],
 ) -> Result<RuleEngine, Box<dyn std::error::Error>> {
     let engine = if rule_files.is_empty() {
-        rules::default_engine()
+        yaml_rule::default_engine()
     } else {
         let mut loaded: Vec<Box<dyn ai_lint::rule::Rule>> = Vec::new();
         let mut ids = std::collections::HashSet::new();

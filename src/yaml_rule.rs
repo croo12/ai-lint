@@ -3,7 +3,7 @@ use std::{collections::HashSet, fs, path::Path};
 
 use oxc_ast::{
     AstKind,
-    ast::{CallExpression, Expression, Program},
+    ast::{BindingPattern, CallExpression, Expression, Program, VariableDeclarator},
 };
 use oxc_ast_visit::{Visit, walk};
 use oxc_span::{GetSpan, Span};
@@ -11,8 +11,39 @@ use serde::Deserialize;
 
 use crate::{
     rule::{Rule, RuleContext},
-    rules::no_set_state_in_effect::SetterCollector,
+    rule_engine::RuleEngine,
 };
+
+/// Embed the default YAML so the binary works from any working directory.
+pub fn default_engine() -> RuleEngine {
+    let rule = YamlRule::parse(include_str!("../rules/no-set-state-in-effect.yaml"))
+        .expect("bundled default YAML rule must be valid");
+    RuleEngine::new(vec![Box::new(rule)])
+}
+
+/// Name-based support for the YAML isStateSetter predicate.
+/// Import aliases and binding shadowing are not resolved.
+#[derive(Default)]
+struct SetterCollector {
+    names: HashSet<String>,
+}
+
+impl<'a> Visit<'a> for SetterCollector {
+    fn visit_variable_declarator(&mut self, declaration: &VariableDeclarator<'a>) {
+        if let BindingPattern::ArrayPattern(pattern) = &declaration.id
+            && let Some(initializer) = &declaration.init
+            && let Expression::CallExpression(call) = initializer.get_inner_expression()
+            && matches!(
+                callee_name(&call.callee).as_deref(),
+                Some("useState" | "React.useState")
+            )
+            && let Some(Some(BindingPattern::BindingIdentifier(setter))) = pattern.elements.get(1)
+        {
+            self.names.insert(setter.name.to_string());
+        }
+        walk::walk_variable_declarator(self, declaration);
+    }
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum YamlRuleError {
@@ -379,6 +410,14 @@ mod tests {
     };
 
     const EFFECT: &str = include_str!("../rules/no-set-state-in-effect.yaml");
+
+    #[test]
+    fn default_analysis_uses_the_bundled_yaml_rule() {
+        let source = "useEffect(() => { setState(1); setState(2); }, []);";
+        let result = Analyzer::analyze_source("test.ts", source).unwrap();
+        assert_eq!(result.rule_violations, check(EFFECT, source));
+        assert_eq!(result.rule_violations.len(), 1);
+    }
 
     fn check(yaml: &str, source: &str) -> Vec<crate::rule::RuleViolation> {
         let engine = RuleEngine::new(vec![Box::new(YamlRule::parse(yaml).unwrap())]);

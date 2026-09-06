@@ -1,0 +1,6 @@
+version: 1
+id: no-alert
+message: alert 대신 사용자 인터페이스에서 메시지를 표시하세요
+match:
+  kind: CallExpression
+  callee: [alert, window.alert]

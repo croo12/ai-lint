@@ -8,7 +8,7 @@ use oxc_parser::Parser;
 use oxc_span::SourceType;
 
 use crate::model::ModelError;
-use crate::{rule::RuleViolation, rule_engine::RuleEngine, rules};
+use crate::{rule::RuleViolation, rule_engine::RuleEngine, yaml_rule};
 
 /// Owned result of analyzing one source file.
 ///
@@ -48,7 +48,7 @@ pub struct Analyzer;
 
 impl Analyzer {
     pub fn analyze_file(path: &Path) -> Result<AnalyzedFile, AnalyzeError> {
-        Self::analyze_file_with_rules(path, &rules::default_engine())
+        Self::analyze_file_with_rules(path, &yaml_rule::default_engine())
     }
 
     pub fn analyze_file_with_rules(
@@ -63,7 +63,7 @@ impl Analyzer {
         file_name: impl AsRef<Path>,
         source: impl Into<String>,
     ) -> Result<AnalyzedFile, AnalyzeError> {
-        Self::analyze_source_with_rules(file_name, source, &rules::default_engine())
+        Self::analyze_source_with_rules(file_name, source, &yaml_rule::default_engine())
     }
 
     pub fn analyze_source_with_rules(

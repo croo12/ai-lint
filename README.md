@@ -2,6 +2,51 @@
 
 JavaScript/TypeScript 소스를 파싱하고 AST 규칙을 검사하는 Rust CLI입니다.
 
+## 프로젝트 구성과 웹 플레이그라운드
+
+Rust CLI는 저장소 루트에서 Cargo로 관리하고, 웹 프로젝트는 npm workspaces의
+`apps/web`에서 관리합니다. Rust CLI와 YAML 규칙을 웹에서도 그대로 사용합니다.
+
+```text
+ai-lint/
+├── src/          Rust CLI·분석 엔진
+├── rules/        공통 YAML 규칙
+├── tests/        Rust 테스트
+└── apps/web/     React + TypeScript 플레이그라운드
+    ├── src/      코드 편집기·규칙 목록·결과 화면
+    ├── rules/    웹 데모용 추가 YAML 규칙
+    └── server/   로컬 CLI 실행 API
+```
+
+```sh
+npm install
+npm run dev
+```
+
+표시되는 로컬 주소를 열면 왼쪽에서 TypeScript/TSX 코드를 수정하고, 오른쪽에서
+규칙을 선택한 뒤 검사할 수 있습니다. 예제 3개, YAML 원문 펼치기, 오류 위치 이동,
+정상·문법 오류·서버 오류 표시를 지원합니다.
+
+웹 서버는 요청 코드를 임시 파일에 저장하고 Rust CLI를 실행한 뒤 파일을 삭제합니다.
+검사 대상 코드는 실행하지 않습니다. 현재 웹 규칙은 AST 검사만 제공하며 모델 서버를
+호출하지 않습니다. 인증키는 브라우저에 전달하지 않습니다.
+이 서버는 **로컬 시연용**입니다. Vite 개발/미리보기 서버의 API를 사용하므로 정적
+`dist` 파일만 호스팅하면 검사 기능은 동작하지 않습니다.
+
+```sh
+npm run build:web    # TypeScript 검사 + 웹 프로덕션 빌드
+npm run check:web    # 웹 소스를 ai-lint로 검사
+npm run test:web     # 설치된 Chrome으로 실제 브라우저 테스트
+npm run build:cli    # Rust 릴리스 빌드
+npm run test:cli     # Rust 테스트
+npm run preview --workspace @ai-lint/web  # 빌드한 웹 + 로컬 검사 API
+```
+
+웹 실행·미리보기 전에 Rust CLI를 자동 빌드합니다. 브라우저 테스트는 Chrome이 필요하며
+Edge를 사용할 경우 `PLAYWRIGHT_CHANNEL=msedge` 환경 변수를 설정합니다.
+현재 Node.js 24와 npm 11에서 검증했습니다. 웹 프로젝트 설정은
+[Vite React·TypeScript 템플릿](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts)을 참고했습니다.
+
 ```sh
 cargo run -- check src/App.tsx
 ```
@@ -14,12 +59,11 @@ cargo run -- check src/App.tsx
 - `analyzer`: 파싱 후 문법 오류가 없으면 규칙 실행기에 AST 전달
 - `rule`: `Rule` 인터페이스, `RuleContext`, `RuleViolation`
 - `rule_engine`: 등록된 규칙 실행 및 위반 결과 수집
-- `rules`: 개별 규칙 구현 및 기본 규칙 등록
 - `model`: 환경 설정, 모델 클라이언트 인터페이스, OpenAI 호환 HTTP 클라이언트
 - `yaml_rule`: YAML 규칙 로딩·검증 및 AST 조건 평가
 
-새 규칙은 `Rule`을 구현하고 `rules::default_engine()`에 등록합니다.
-AST 순회는 각 규칙이 담당하며, 분석 결과에는 소유권이 독립적인 진단을 저장합니다.
+새 규칙은 YAML로 작성해 `--rules`로 지정합니다. `yaml_rule`이 AST를 순회하고,
+분석 결과에는 소유권이 독립적인 진단을 저장합니다.
 
 ## YAML 규칙
 
@@ -30,8 +74,10 @@ cargo run -- check --rules rules/no-set-state-in-effect.yaml src/App.tsx
 cargo run -- check --rules first.yaml --rules second.yaml src/App.tsx
 ```
 
-`--rules`를 지정하면 나열한 YAML 규칙만 실행합니다. 생략하면 기존 Rust 기본 규칙을
-실행합니다. 자동 디렉터리 탐색은 하지 않습니다. 중복 ID, 읽기 실패, 잘못된 YAML,
+`--rules`를 지정하면 나열한 YAML 규칙만 실행합니다. 생략하면
+`rules/no-set-state-in-effect.yaml`을 빌드 시 실행 파일에 포함한 기본 규칙을 실행합니다.
+따라서 기본 규칙은 실행 디렉터리에 의존하지 않으며 변경 반영에는 재빌드가 필요합니다.
+자동 디렉터리 탐색은 하지 않습니다. 중복 ID, 읽기 실패, 잘못된 YAML,
 지원하지 않는 필드·노드 종류·조건은 오류(종료 코드 `2`)로 처리합니다.
 
 ```yaml
@@ -50,7 +96,7 @@ where:
 ```
 
 이 규칙은 조건을 만족하는 **useEffect 호출당 한 건**을 보고합니다. 진단 위치도
-useEffect 호출 전체입니다. 기존 Rust 규칙의 setter 호출당 보고 방식과 다릅니다.
+useEffect 호출 전체입니다. 기본 검사도 같은 방식으로 보고합니다.
 
 ### 버전 1 문법
 
@@ -80,7 +126,7 @@ where:
         contains: {kind: CallExpression, callee: subscribe}
 ```
 
-`isStateSetter`는 기존 Rust 규칙과 동일하게 `setState` 및 같은 파일의
+`isStateSetter`는 `setState` 및 같은 파일의
 `useState`/`React.useState` 구조 분해로 얻은 setter 이름을 검사합니다.
 import 별칭, 변수 가려짐, 변수로 전달된 콜백, 간접 호출은 추적하지 않습니다.
 계산된 프로퍼티 호출(`React['useEffect']`)은 `callee` 점 표기로 매칭하지 않습니다.
@@ -175,7 +221,7 @@ AI_LINT_MODEL_JSON_MODE=false
 다른 서버 구현이나 테스트용 클라이언트로 교체할 수도 있습니다.
 
 현재 기본 `useEffect` 규칙은 AST 검사만 수행하므로 모델 서버를 호출하지 않습니다.
-새 모델 규칙을 기본 검사에 넣으려면 `rules::default_engine()`에 등록합니다.
+새 모델 규칙은 YAML의 `judge` 항목으로 정의하고 `--rules`로 지정합니다.
 
 설정을 채운 후 다음 예제로 실제 연동을 시험할 수 있습니다. 이 예제는 **입력 파일 전체를
 설정한 서버로 전송**하고, 명령행에서 받은 검사 기준으로 판단을 요청합니다.

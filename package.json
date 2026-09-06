@@ -1,0 +1,13 @@
+{
+  "name": "ai-lint-workspace",
+  "private": true,
+  "workspaces": ["apps/*"],
+  "scripts": {
+    "dev": "npm run dev --workspace @ai-lint/web",
+    "build:web": "npm run build --workspace @ai-lint/web",
+    "build:cli": "cargo build --release --locked",
+    "check:web": "cargo run --locked -- check apps/web/src/main.tsx apps/web/src/App.tsx",
+    "test:cli": "cargo test --locked",
+    "test:web": "npm test --workspace @ai-lint/web"
+  }
+}

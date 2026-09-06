@@ -1,0 +1,6 @@
+version: 1
+id: no-console-log
+message: 디버깅용 console.log 호출을 제거하세요
+match:
+  kind: CallExpression
+  callee: console.log

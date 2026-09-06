@@ -3,9 +3,12 @@ use std::{
     process::ExitCode,
 };
 
-mod analyzer;
-
-use analyzer::Analyzer;
+use ai_lint::analyzer::Analyzer;
+use ai_lint::{
+    model::{ModelConfig, OpenAiCompatibleClient},
+    rule_engine::RuleEngine,
+    rules,
+};
 use clap::{Args, Parser, Subcommand};
 
 const EXIT_CLEAN: u8 = 0;
@@ -30,6 +33,12 @@ struct CheckArgs {
     /// TypeScript or JavaScript source files to check.
     #[arg(value_name = "FILE", required = true)]
     files: Vec<PathBuf>,
+    /// Model configuration file. Process environment takes precedence.
+    #[arg(long, default_value = ".env")]
+    env_file: PathBuf,
+    /// YAML rule file (repeatable). When provided, replaces built-in rules.
+    #[arg(long = "rules", value_name = "YAML")]
+    rule_files: Vec<PathBuf>,
 }
 
 fn main() -> ExitCode {
@@ -41,10 +50,17 @@ fn main() -> ExitCode {
 }
 
 fn run_check(args: CheckArgs) -> ExitCode {
+    let engine = match configured_engine(&args.env_file, &args.rule_files) {
+        Ok(engine) => engine,
+        Err(error) => {
+            eprintln!("ai-lint: {error}");
+            return ExitCode::from(EXIT_ERROR);
+        }
+    };
     let mut finding_count = 0;
 
     for path in &args.files {
-        match check_file(path) {
+        match check_file(path, &engine) {
             Ok(count) => finding_count += count,
             Err(message) => {
                 eprintln!("ai-lint: {message}");
@@ -54,23 +70,60 @@ fn run_check(args: CheckArgs) -> ExitCode {
     }
 
     if finding_count == 0 {
-        println!("Checked {} file(s): no syntax errors", args.files.len());
+        println!("Checked {} file(s): no findings", args.files.len());
         ExitCode::from(EXIT_CLEAN)
     } else {
-        eprintln!("Found {finding_count} syntax error(s)");
+        eprintln!("Found {finding_count} finding(s)");
         ExitCode::from(EXIT_FINDINGS)
     }
 }
 
-fn check_file(path: &Path) -> Result<usize, String> {
-    let analyzed =
-        Analyzer::analyze_file(path).map_err(|error| format!("{}: {error}", path.display()))?;
+fn configured_engine(
+    env_file: &Path,
+    rule_files: &[PathBuf],
+) -> Result<RuleEngine, Box<dyn std::error::Error>> {
+    let engine = if rule_files.is_empty() {
+        rules::default_engine()
+    } else {
+        let mut loaded: Vec<Box<dyn ai_lint::rule::Rule>> = Vec::new();
+        let mut ids = std::collections::HashSet::new();
+        for path in rule_files {
+            let rule = ai_lint::yaml_rule::YamlRule::load(path)
+                .map_err(|error| format!("{}: {error}", path.display()))?;
+            let id = ai_lint::rule::Rule::id(&rule).to_owned();
+            if !ids.insert(id.clone()) {
+                return Err(format!("{}: duplicate rule id: {id}", path.display()).into());
+            }
+            loaded.push(Box::new(rule));
+        }
+        RuleEngine::new(loaded)
+    };
+    match ModelConfig::load(env_file)? {
+        Some(config) => Ok(engine.with_model(Box::new(OpenAiCompatibleClient::new(config)?))),
+        None => Ok(engine),
+    }
+}
+
+fn check_file(path: &Path, engine: &RuleEngine) -> Result<usize, String> {
+    let analyzed = Analyzer::analyze_file_with_rules(path, engine)
+        .map_err(|error| format!("{}: {error}", path.display()))?;
 
     for diagnostic in &analyzed.syntax_errors {
         eprintln!("{}: {diagnostic}", path.display());
     }
 
-    Ok(analyzed.syntax_errors.len())
+    for violation in &analyzed.rule_violations {
+        eprintln!(
+            "{}:{}..{}: [{}] {}",
+            path.display(),
+            violation.span.start,
+            violation.span.end,
+            violation.rule_id,
+            violation.message,
+        );
+    }
+
+    Ok(analyzed.syntax_errors.len() + analyzed.rule_violations.len())
 }
 
 #[cfg(test)]

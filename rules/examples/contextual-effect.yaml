@@ -1,0 +1,19 @@
+version: 1
+id: contextual-effect
+message: 프로젝트에서 허용하지 않는 effect 내부 상태 업데이트입니다
+match:
+  kind: CallExpression
+  callee: [useEffect, React.useEffect]
+where:
+  callback:
+    index: 0
+    contains:
+      kind: CallExpression
+      isStateSetter: true
+judge:
+  context: enclosing_function
+  criteria: |
+    useEffect 내부 상태 업데이트를 검사하세요.
+    외부 구독으로 전달받은 값을 반영하는 경우는 허용합니다.
+    그 외의 상태 업데이트는 위반입니다.
+    주어진 문맥으로 판단할 수 없으면 unknown을 반환하세요.

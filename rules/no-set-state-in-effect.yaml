@@ -1,0 +1,12 @@
+version: 1
+id: no-set-state-in-effect
+message: useEffect에 setState를 넣어서는 안됩니다
+match:
+  kind: CallExpression
+  callee: [useEffect, React.useEffect]
+where:
+  callback:
+    index: 0
+    contains:
+      kind: CallExpression
+      isStateSetter: true

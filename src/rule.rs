@@ -1,7 +1,6 @@
 //! Shared contract and owned diagnostics for AST rules.
 
 use crate::model::ModelRequest;
-use oxc_ast::ast::Program;
 use oxc_span::Span;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -68,11 +67,4 @@ impl<'a> RuleContext<'a> {
             .expect("request just added")
             .message = Some(message.into());
     }
-}
-
-pub trait Rule {
-    fn id(&self) -> &str;
-
-    /// Traverse the required nodes and report violations through the context.
-    fn check(&self, program: &Program<'_>, context: &mut RuleContext<'_>);
 }

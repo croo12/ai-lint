@@ -4,7 +4,7 @@ use std::{
 };
 
 use oxc_allocator::Allocator;
-use oxc_parser::Parser;
+use oxc_parser::{ParseOptions, Parser};
 use oxc_span::SourceType;
 
 use crate::model::ModelError;
@@ -28,6 +28,7 @@ pub enum AnalyzeError {
     Read(std::io::Error),
     UnsupportedSource,
     Model(ModelError),
+    Rule(String),
 }
 
 impl fmt::Display for AnalyzeError {
@@ -35,6 +36,7 @@ impl fmt::Display for AnalyzeError {
         match self {
             Self::Read(error) => write!(formatter, "failed to read source: {error}"),
             Self::Model(error) => write!(formatter, "model evaluation failed: {error}"),
+            Self::Rule(error) => write!(formatter, "rule evaluation failed: {error}"),
             Self::UnsupportedSource => {
                 write!(formatter, "expected a JavaScript or TypeScript file")
             }
@@ -82,7 +84,12 @@ impl Analyzer {
         let source_type =
             SourceType::from_path(path).map_err(|_| AnalyzeError::UnsupportedSource)?;
         let allocator = Allocator::default();
-        let result = Parser::new(&allocator, &source, source_type).parse();
+        let result = Parser::new(&allocator, &source, source_type)
+            .with_options(ParseOptions {
+                preserve_parens: false,
+                ..ParseOptions::default()
+            })
+            .parse();
 
         let syntax_errors: Vec<String> = result
             .diagnostics
@@ -94,7 +101,7 @@ impl Analyzer {
 
         // Rules only see a successfully parsed program, never a recovered AST.
         let check = if syntax_errors.is_empty() && !result.panicked {
-            rules.check(&result.program)
+            rules.check(&result.program).map_err(AnalyzeError::Rule)?
         } else {
             Default::default()
         };

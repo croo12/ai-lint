@@ -4,35 +4,18 @@ use std::{env, error::Error, process::ExitCode};
 use ai_lint::{
     analyzer::Analyzer,
     model::{ModelConfig, ModelError, OpenAiCompatibleClient},
-    rule::{Rule, RuleContext},
     rule_engine::RuleEngine,
+    yaml_rule::YamlRule,
 };
-use oxc_ast::ast::Program;
-
-struct ContextualRule {
-    criteria: String,
-}
-
-impl Rule for ContextualRule {
-    fn id(&self) -> &'static str {
-        "example/contextual-rule"
-    }
-
-    fn check(&self, program: &Program<'_>, context: &mut RuleContext<'_>) {
-        context.request_model(program.span, &self.criteria, program.source_text);
-    }
-}
 
 fn run() -> Result<ExitCode, Box<dyn Error>> {
     let args: Vec<_> = env::args().skip(1).collect();
     if args.len() != 2 {
-        return Err("usage: cargo run --example model_rule -- FILE CRITERIA".into());
+        return Err("usage: cargo run --example model_rule -- FILE RULE.yaml".into());
     }
     let config = ModelConfig::load(".env")?.ok_or(ModelError::NotConfigured)?;
-    let engine = RuleEngine::new(vec![Box::new(ContextualRule {
-        criteria: args[1].clone(),
-    })])
-    .with_model(Box::new(OpenAiCompatibleClient::new(config)?));
+    let engine = RuleEngine::new(vec![YamlRule::load(&args[1])?])
+        .with_model(Box::new(OpenAiCompatibleClient::new(config)?));
     let analyzed = Analyzer::analyze_file_with_rules(args[0].as_ref(), &engine)?;
     for error in &analyzed.syntax_errors {
         eprintln!("{error}");

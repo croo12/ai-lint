@@ -2,6 +2,8 @@
 
 JavaScript/TypeScript 소스를 파싱하고 AST 규칙을 검사하는 Rust CLI입니다.
 
+규칙 작성과 엔진 확장은 [YAML 전용 규칙 아키텍처 결정](docs/adr/0001-yaml-only-rules.md)을 따릅니다.
+
 ## Claude Code / Codex hook 어댑터
 
 `packages/adapters`는 파일 수정 후와 종료 직전에 YAML 규칙을 실행하는
@@ -88,117 +90,65 @@ cargo run -- check src/App.tsx
 ## 모듈
 
 - `analyzer`: 파싱 후 문법 오류가 없으면 규칙 실행기에 AST 전달
-- `rule`: `Rule` 인터페이스, `RuleContext`, `RuleViolation`
+- `rule`: 진단과 모델 요청 수집용 내부 문맥, `RuleViolation`
 - `rule_engine`: 등록된 규칙 실행 및 위반 결과 수집
 - `model`: 환경 설정, 모델 클라이언트 인터페이스, OpenAI 호환 HTTP 클라이언트
 - `yaml_rule`: YAML 규칙 로딩·검증 및 AST 조건 평가
 
-새 규칙은 YAML로 작성해 `--rules`로 지정합니다. `yaml_rule`이 AST를 순회하고,
+새 규칙은 YAML로 작성해 `--rules`로 지정합니다. `yaml_rule`이 범용 AST 쿼리를 실행하고,
 분석 결과에는 소유권이 독립적인 진단을 저장합니다.
 
 ## YAML 규칙
 
-사용자 규칙은 YAML 파일 하나에 규칙 하나를 작성합니다.
+규칙은 YAML로만 정의합니다. Rust의 `Rule` 구현이나 규칙 전용 조건을 추가하지 않습니다.
+문법과 캡처·탐색·바인딩 비교의 정확한 의미는 [YAML v2 가이드](docs/yaml-rules.md)에 있습니다.
 
 ```sh
 cargo run -- check --rules rules/no-set-state-in-effect.yaml src/App.tsx
 cargo run -- check --rules first.yaml --rules second.yaml src/App.tsx
 ```
 
-`--rules`를 지정하면 나열한 YAML 규칙만 실행합니다. 생략하면
-`rules/no-set-state-in-effect.yaml`을 빌드 시 실행 파일에 포함한 기본 규칙을 실행합니다.
-따라서 기본 규칙은 실행 디렉터리에 의존하지 않으며 변경 반영에는 재빌드가 필요합니다.
-자동 디렉터리 탐색은 하지 않습니다. 중복 ID, 읽기 실패, 잘못된 YAML,
-지원하지 않는 필드·노드 종류·조건은 오류(종료 코드 `2`)로 처리합니다.
+`--rules`를 지정하면 나열한 YAML만 실행합니다. 생략하면
+`rules/no-set-state-in-effect.yaml`을 빌드 시 포함한 기본 규칙을 실행합니다.
+자동 디렉터리 탐색은 하지 않으며 기본 규칙 변경 반영에는 재빌드가 필요합니다.
+중복 ID, 읽기 실패, 잘못된 YAML, 쿼리 실행 한도 초과는 실행 오류(종료 코드 `2`)입니다.
 
 ```yaml
-version: 1
-id: no-set-state-in-effect
-message: useEffect에 setState를 넣어서는 안됩니다
+version: 2
+id: no-console-log
+message: console.log를 사용하지 마세요.
 match:
   kind: CallExpression
-  callee: [useEffect, React.useEffect]
-where:
-  callback:
-    index: 0
-    contains:
-      kind: CallExpression
-      isStateSetter: true
+  properties:
+    callee.type: MemberExpression
+    callee.computed: false
+    callee.object.type: Identifier
+    callee.object.name: console
+    callee.property.name: log
 ```
 
-이 규칙은 조건을 만족하는 **useEffect 호출당 한 건**을 보고합니다. 진단 위치도
-useEffect 호출 전체입니다. 기본 검사도 같은 방식으로 보고합니다.
+AST 노드 속성은 Oxc가 생성한 ESTree JSON의 경로로 접근합니다.
+`at`, `child`, `descendant`, `ancestor`로 탐색하고,
+`capture`와 `same_binding`으로 선언과 참조를 연결할 수 있습니다.
+보고와 모델 요청은 최상위 `match` 노드당 한 번입니다.
 
-### 버전 1 문법
+`rules/examples/prefer-functional-transforms.yaml`은 지역 빈 배열 선언,
+반복문, 같은 배열의 `push`를 YAML만으로 연결합니다.
+중첩 함수 제외와 함수당 한 번 보고도 YAML의 선택·탐색 범위로 표현합니다.
+후보만 AI에 전달하고, AI가 함수형 표현의 적합성과 동작 보존 여부를 판단합니다.
+이 예제는 기본 활성화되지 않습니다.
 
-`id`, `message`, `match`는 필수이며 `version` 기본값은 `1`입니다.
-ID에는 영문·숫자·`-`·`_`·`/`를 사용할 수 있습니다.
+기본 effect 규칙도 같은 범용 문법을 사용합니다.
+`useEffect`/`React.useEffect`의 인라인 콜백에서 `setState` 호출 또는
+`useState`/`React.useState`의 배열 구조 분해로 얻은 setter 호출을 찾습니다.
+구조 분해 setter는 실제 바인딩으로 비교하므로 다른 스코프의 같은 이름과 구분됩니다.
+중첩 함수 호출은 포함하며 import 별칭과 값의 간접 전달은 추적하지 않습니다.
+함수 이름 자체의 판별은 YAML의 속성 비교이며 React import 출처를 증명하지 않습니다.
 
-| 항목 | 의미 |
-|---|---|
-| `match.kind` | 현재 `CallExpression` 지원 |
-| `match.callee` | 정확한 함수 이름 또는 이름 목록. `React.useEffect` 같은 점 표기 지원. 생략하면 모든 호출 |
-| `match.isStateSetter` | setter 여부를 `true` 또는 `false`로 제한 |
-| `where.callback` | `index`(0부터 시작) 위치의 인라인 함수·화살표 콜백에서 `contains` 선택자에 맞는 호출 검색 |
-| `where.contains` | 현재 호출 자신을 제외한 하위 트리에서 선택자에 맞는 호출 검색 |
-| `where.all` / `where.any` | 조건 목록을 모두/하나 이상 만족해야 함 |
-| `where.not` | 하나의 조건을 부정 |
-
-선택자의 필드는 모두 AND로 결합됩니다. 각 조건에는 `callback`, `contains`, `all`,
-`any`, `not` 중 정확히 하나만 사용합니다. 논리 조건은 중첩할 수 있습니다.
-
-```yaml
-where:
-  all:
-    - callback:
-        index: 0
-        contains: {kind: CallExpression, isStateSetter: true}
-    - not:
-        contains: {kind: CallExpression, callee: subscribe}
-```
-
-`isStateSetter`는 `setState` 및 같은 파일의
-`useState`/`React.useState` 구조 분해로 얻은 setter 이름을 검사합니다.
-import 별칭, 변수 가려짐, 변수로 전달된 콜백, 간접 호출은 추적하지 않습니다.
-계산된 프로퍼티 호출(`React['useEffect']`)은 `callee` 점 표기로 매칭하지 않습니다.
-중첩 함수 내부도 검색하지만 문자열·주석은 호출로 취급하지 않습니다.
-규칙 파일은 최대 256 KiB, 조건 중첩은 최대 32단계입니다.
-
-### YAML에서 모델 판단 요청
-
-`judge`를 추가하면 AST 조건을 만족한 후보만 모델에 전달합니다.
-모델 설정이 없더라도 후보가 없으면 모델 요청 없이 완료합니다.
-
-```yaml
-judge:
-  context: enclosing_function
-  criteria: |
-    외부 구독으로 받은 값을 반영하는 상태 업데이트는 허용합니다.
-    그 외에는 위반입니다. 문맥이 부족하면 unknown을 반환하세요.
-```
-
-`context`는 `matched_node`(기본값: 매칭된 호출), `enclosing_function`(가장 가까운
-상위 함수, 없으면 매칭된 호출), `source_file`(파일 전체)을 지원합니다.
-선택한 범위의 소스가 설정한 원격 모델 서버로 전송됩니다.
-`violation`이면 YAML의 `message`를 보고하고, `pass`면 보고하지 않습니다.
-`unknown`이나 모델 오류는 검사 실패로 처리합니다.
-
-전체 예제: `rules/examples/contextual-effect.yaml`.
-
-## no-set-state-in-effect
-
-`useEffect` 또는 `React.useEffect`의 인라인 화살표/함수 콜백 안에서
-`setState(...)` 또는 같은 파일의 `useState`/`React.useState` 배열 구조 분해로
-선언된 setter 호출을 발견하면 다음 문구를 출력합니다.
-
-> useEffect에 setState를 넣어서는 안됩니다
-
-콜백 내부에 중첩된 함수의 호출도 포함합니다. 문자열, 주석, setter 참조만 있는
-표현식은 위반이 아닙니다. 의존성 배열 자체는 해당 effect의 콜백으로 검사하지 않습니다.
-
-첫 버전은 이름을 기반으로 한 문법 검사입니다. import 별칭, 동일 이름의 다른 바인딩
-(shadowing), 변수로 전달한 콜백, 별도 함수 내부의 간접 호출은 추적하지 않습니다.
-따라서 동일 이름을 재사용하면 오탐이 발생할 수 있습니다.
+**마이그레이션:** v1과 `callee`, `callback`, `isStateSetter`,
+작업 중이던 `hasLoopAccumulator`는 지원하지 않습니다.
+저장소의 기본·예제·웹 규칙은 v2로 전환했습니다. 외부 규칙은
+[마이그레이션 안내](docs/yaml-rules.md#v1에서-전환)를 따라 수정해야 합니다.
 
 ## 원격 모델 설정
 
@@ -241,30 +191,39 @@ AI_LINT_MODEL_JSON_MODE=false
 
 ## 모델을 사용하는 규칙 추가
 
-규칙의 `check()`에서 `context.request_model(span, criteria, source_excerpt)`를 호출합니다.
-`span`은 원본 파일의 진단 범위, `criteria`는 검사 기준, `source_excerpt`는 판단에 필요한
-코드 조각입니다. 이 시점에는 네트워크 요청 없이 소유권이 독립적인 요청을 수집합니다.
-분석기가 AST를 해제한 뒤 `RuleEngine::resolve()`가 요청을 순차 실행합니다.
+YAML에 `judge`를 추가합니다. 별도 Rust 규칙은 작성하지 않습니다.
 
-라이브러리 사용 시 `ModelConfig::load()`와 `OpenAiCompatibleClient::new()`로 클라이언트를
-만들고 `RuleEngine::with_model()`로 주입합니다. `Analyzer::analyze_file_with_rules()` 또는
-`analyze_source_with_rules()`에 실행기를 전달하면 됩니다. `ModelClient`를 구현하여
-다른 서버 구현이나 테스트용 클라이언트로 교체할 수도 있습니다.
-
-현재 기본 `useEffect` 규칙은 AST 검사만 수행하므로 모델 서버를 호출하지 않습니다.
-새 모델 규칙은 YAML의 `judge` 항목으로 정의하고 `--rules`로 지정합니다.
-
-설정을 채운 후 다음 예제로 실제 연동을 시험할 수 있습니다. 이 예제는 **입력 파일 전체를
-설정한 서버로 전송**하고, 명령행에서 받은 검사 기준으로 판단을 요청합니다.
-
-```sh
-cargo run --example model_rule -- src/App.tsx "오류를 기록하지 않고 무시하는 catch 블록이 있으면 위반입니다."
+```yaml
+version: 2
+id: review-function
+message: 함수가 프로젝트 기준을 위반합니다.
+match:
+  kind: [FunctionDeclaration, FunctionExpression, ArrowFunctionExpression]
+judge:
+  context: matched_node
+  criteria: |
+    오류를 기록하지 않고 무시하는 catch 블록이 있으면 violation입니다.
+    그렇지 않으면 pass, 판단에 필요한 문맥이 부족하면 unknown을 반환하세요.
 ```
 
-실제 서버의 모델 및 확장 기능 호환성은 설정을 입력한 뒤 확인해야 합니다.
-자동 테스트는 외부 모델 대신 루프백 HTTP 모의 서버를 사용합니다.
+`matched_node`(기본값), `enclosing_function`, `source_file` 문맥을 지원합니다.
+선택한 소스 범위는 설정한 원격 모델 서버로 전송됩니다.
+`violation`이면 YAML 메시지를 보고하고, `pass`면 통과합니다.
+`unknown`·모델 미설정·통신 오류는 실행 오류입니다.
+후보가 없으면 모델을 호출하지 않습니다.
+
+Rust에서 호출할 때도 YAML을 로드합니다.
+
+```rust
+let rule = ai_lint::yaml_rule::YamlRule::load("rules/examples/contextual-effect.yaml")?;
+let engine = ai_lint::rule_engine::RuleEngine::new(vec![rule]);
+```
+
+모델 클라이언트는 기존 `RuleEngine::with_model`로 주입합니다.
+실행 예제 역시 YAML 규칙 파일을 받습니다.
 
 ```sh
+cargo run --example model_rule -- src/App.tsx rules/examples/contextual-effect.yaml
 cargo test --locked --offline
 cargo fmt --check
 cargo clippy --locked --offline --all-targets -- -D warnings

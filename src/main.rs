@@ -137,16 +137,16 @@ fn configured_engine(
     let engine = if rule_files.is_empty() {
         yaml_rule::default_engine()
     } else {
-        let mut loaded: Vec<Box<dyn ai_lint::rule::Rule>> = Vec::new();
+        let mut loaded = Vec::new();
         let mut ids = std::collections::HashSet::new();
         for path in rule_files {
             let rule = ai_lint::yaml_rule::YamlRule::load(path)
                 .map_err(|error| format!("{}: {error}", path.display()))?;
-            let id = ai_lint::rule::Rule::id(&rule).to_owned();
+            let id = rule.id().to_owned();
             if !ids.insert(id.clone()) {
                 return Err(format!("{}: duplicate rule id: {id}", path.display()).into());
             }
-            loaded.push(Box::new(rule));
+            loaded.push(rule);
         }
         RuleEngine::new(loaded)
     };

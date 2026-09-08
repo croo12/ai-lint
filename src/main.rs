@@ -7,7 +7,7 @@ use ai_lint::analyzer::Analyzer;
 use ai_lint::{
     model::{ModelConfig, OpenAiCompatibleClient},
     rule_engine::RuleEngine,
-    yaml_rule,
+    rules,
 };
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use serde_json::json;
@@ -33,6 +33,8 @@ struct Cli {
 enum Command {
     /// Parse changed source files and check them with AI Lint.
     Check(CheckArgs),
+    /// List compiled rule IDs.
+    Rules,
 }
 
 #[derive(Debug, Args)]
@@ -43,9 +45,9 @@ struct CheckArgs {
     /// Model configuration file. Process environment takes precedence.
     #[arg(long, default_value = ".env")]
     env_file: PathBuf,
-    /// YAML rule file (repeatable). When provided, replaces built-in rules.
-    #[arg(long = "rules", value_name = "YAML")]
-    rule_files: Vec<PathBuf>,
+    /// Compiled rule ID (repeatable). Replaces the default selection.
+    #[arg(long = "rules", value_name = "ID")]
+    rule_ids: Vec<String>,
     /// Output format for command-line use or integrations.
     #[arg(long, value_enum, default_value = "text")]
     format: OutputFormat,
@@ -56,6 +58,10 @@ fn main() -> ExitCode {
 
     match cli.command {
         Command::Check(args) => run_check(args),
+        Command::Rules => {
+            println!("{}", rules::IDS.join("\n"));
+            ExitCode::SUCCESS
+        }
     }
 }
 
@@ -63,7 +69,7 @@ fn run_check(args: CheckArgs) -> ExitCode {
     if args.format == OutputFormat::Json {
         return run_check_json(args);
     }
-    let engine = match configured_engine(&args.env_file, &args.rule_files) {
+    let engine = match configured_engine(&args.env_file, &args.rule_ids) {
         Ok(engine) => engine,
         Err(error) => {
             eprintln!("ai-lint: {error}");
@@ -95,7 +101,7 @@ fn run_check_json(args: CheckArgs) -> ExitCode {
     let mut files = Vec::new();
     let mut errors = Vec::new();
     let mut findings = 0;
-    match configured_engine(&args.env_file, &args.rule_files) {
+    match configured_engine(&args.env_file, &args.rule_ids) {
         Err(error) => errors.push(error.to_string()),
         Ok(engine) => {
             for path in &args.files {
@@ -132,23 +138,12 @@ fn run_check_json(args: CheckArgs) -> ExitCode {
 
 fn configured_engine(
     env_file: &Path,
-    rule_files: &[PathBuf],
+    rule_ids: &[String],
 ) -> Result<RuleEngine, Box<dyn std::error::Error>> {
-    let engine = if rule_files.is_empty() {
-        yaml_rule::default_engine()
+    let engine = if rule_ids.is_empty() {
+        rules::default_engine()
     } else {
-        let mut loaded = Vec::new();
-        let mut ids = std::collections::HashSet::new();
-        for path in rule_files {
-            let rule = ai_lint::yaml_rule::YamlRule::load(path)
-                .map_err(|error| format!("{}: {error}", path.display()))?;
-            let id = rule.id().to_owned();
-            if !ids.insert(id.clone()) {
-                return Err(format!("{}: duplicate rule id: {id}", path.display()).into());
-            }
-            loaded.push(rule);
-        }
-        RuleEngine::new(loaded)
+        rules::select(rule_ids)?
     };
     match ModelConfig::load(env_file)? {
         Some(config) => Ok(engine.with_model(Box::new(OpenAiCompatibleClient::new(config)?))),

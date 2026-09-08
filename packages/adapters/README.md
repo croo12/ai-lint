@@ -1,6 +1,6 @@
 # @ai-lint/adapters
 
-Claude Code와 Codex의 동기 command hook에서 YAML 규칙을 실행하는 TypeScript 라이브러리입니다.
+Claude Code와 Codex의 동기 command hook에서 Rust 규칙을 실행하는 TypeScript 라이브러리입니다.
 모델이 검사 도구를 선택할 필요 없이 hook 이벤트로 트리거됩니다. MCP 서버는 사용하지 않습니다.
 
 ## 준비
@@ -26,7 +26,7 @@ npm run hooks:install -- --global --agent claude-code
 
 사용자 홈의 `.claude/settings.json`에 병합하고 `.claude/ai-lint/adapter.json`을 생성합니다.
 백업은 `.claude/ai-lint/backups/`에 보관합니다. 각 hook 입력의 `cwd`를 검사 루트로 사용하며
-기본 YAML 규칙으로 해당 디렉터리의 JS/TS를 검사합니다. 전역 설치에는 `--workspace`와
+기본 Rust 규칙으로 해당 디렉터리의 JS/TS를 검사합니다. 전역 설치에는 `--workspace`와
 `--source-root`를 함께 지정할 수 없습니다. 이 저장소의 빌드 결과를 참조하므로 이동·삭제하지 마세요.
 이미 프로젝트 hook이 설치되어 있으면 전역 hook과 함께 실행될 수 있습니다.
 
@@ -48,10 +48,10 @@ npm run hooks:install -- --agent codex --workspace C:/projects/my-app --source-r
 - 변경되는 기존 파일은 `.ai-lint/backups/`에 원문 그대로 백업합니다. 필요하면 해당 파일을 원래 경로에 복사해 복구하세요.
   다른 프로젝트에서도 이 백업 디렉터리를 `.gitignore`에 추가하는 것을 권장합니다.
 - `--dry-run`을 붙이면 파일을 쓰지 않고 변경 예정 경로만 출력합니다.
-- `--rules FILE`과 `--source-root PATH`는 여러 번 지정할 수 있습니다. `--env-file FILE`,
+- `--rules ID`과 `--source-root PATH`는 여러 번 지정할 수 있습니다. `--env-file FILE`,
   `--bin PATH`, `--timeout-ms NUMBER`, `--hook-timeout SECONDS`도 지원합니다.
 - 새 설정의 검사 범위 기본값은 프로젝트 전체입니다. 기존 어댑터 설정은 명시한 옵션만 갱신합니다.
-  규칙을 생략하면 기본 YAML 규칙을 사용합니다. 실행 파일 기본값은 이 저장소의 릴리스 빌드입니다.
+  규칙을 생략하면 기본 Rust 규칙을 사용합니다. 실행 파일 기본값은 이 저장소의 릴리스 빌드입니다.
 - 기존 JSON 설정이 잘못되었거나 검사 경로·실행 파일이 없으면 설정을 변경하지 않고 실패합니다.
 
 설치 후 에이전트를 다시 열고 `/hooks`에서 등록 상태를 확인하세요.
@@ -69,7 +69,7 @@ Codex의 hook 신뢰 승인은 사용자가 직접 해야 하며 설치 명령�
   "workspace": "C:/projects/my-app",
   "binary": "C:/tools/ai-lint/target/release/ai-lint.exe",
   "sourceRoots": ["src", "apps/web/src"],
-  "ruleFiles": ["C:/tools/ai-lint/rules/no-set-state-in-effect.yaml"],
+  "ruleIds": ["no-set-state-in-effect"],
   "envFile": ".env",
   "timeoutMs": 60000
 }
@@ -79,7 +79,7 @@ Linux/macOS에서는 실행 파일의 `.exe`를 빼고 해당 시스템 경로�
 상대 `workspace`는 설정 파일 위치 기준, 나머지 경로는 workspace 기준입니다.
 `sourceRoots`에는 존재하는 소스 디렉터리나 파일을 지정합니다. 기본값은 `["."]`이며,
 의도적으로 오류가 있는 테스트 fixture는 검사 범위에서 제외하는 것이 좋습니다.
-`ruleFiles`를 생략하거나 비우면 실행 파일에 포함한 기본 YAML 규칙을 사용합니다.
+`ruleIds`를 생략하거나 비우면 실행 파일에 포함한 기본 Rust 규칙을 사용합니다.
 
 모델 인증키는 기존 `.env`와 `AI_LINT_MODEL_*` 환경 변수를 사용합니다.
 모델을 사용하는 규칙을 등록했다면 해당 코드 범위가 설정한 원격 서버로 전송됩니다.

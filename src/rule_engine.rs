@@ -1,10 +1,10 @@
-//! Executes YAML queries over one shared AST and binding index per source file.
+//! Executes compiled Rust rules over one shared semantic AST per source file.
 use crate::{
     model::{Decision, ModelClient, ModelError, ModelRequest},
-    rule::{RuleContext, RuleViolation},
-    yaml_rule::{Document, YamlRule, binding_symbols},
+    rule::{Rule, RuleContext, RuleViolation},
 };
 use oxc_ast::ast::Program;
+use oxc_semantic::SemanticBuilder;
 
 #[derive(Default)]
 pub struct RuleCheck {
@@ -13,11 +13,11 @@ pub struct RuleCheck {
 }
 #[derive(Default)]
 pub struct RuleEngine {
-    rules: Vec<YamlRule>,
+    rules: Vec<Box<dyn Rule>>,
     model: Option<Box<dyn ModelClient>>,
 }
 impl RuleEngine {
-    pub fn new(rules: Vec<YamlRule>) -> Self {
+    pub fn new(rules: Vec<Box<dyn Rule>>) -> Self {
         Self { rules, model: None }
     }
     pub fn with_model(mut self, model: Box<dyn ModelClient>) -> Self {
@@ -29,15 +29,14 @@ impl RuleEngine {
         if self.rules.is_empty() {
             return Ok(check);
         }
-        let bindings = binding_symbols(program)?;
-        let tree = serde_json::from_str(&program.to_estree_json(true, false))
-            .map_err(|error| format!("could not index AST: {error}"))?;
-        let document = Document::new(program.source_text, &tree, bindings);
+        let built = SemanticBuilder::new().with_build_nodes(true).build(program);
+        if !built.diagnostics.is_empty() {
+            return Err(format!("semantic analysis failed: {:?}", built.diagnostics));
+        }
         for rule in &self.rules {
             let mut context =
                 RuleContext::new(rule.id(), &mut check.violations, &mut check.model_requests);
-            rule.check(&document, &mut context)
-                .map_err(|error| format!("{}: {error}", rule.id()))?;
+            rule.check(&built.semantic, &mut context);
         }
         Ok(check)
     }

@@ -2,11 +2,11 @@
 
 JavaScript/TypeScript 소스를 파싱하고 AST 규칙을 검사하는 Rust CLI입니다.
 
-규칙 작성과 엔진 확장은 [YAML 전용 규칙 아키텍처 결정](docs/adr/0001-yaml-only-rules.md)을 따릅니다.
+규칙 작성과 엔진 확장은 [Rust 전용 규칙 아키텍처 결정](docs/adr/0002-rust-only-rules.md)을 따릅니다.
 
 ## Claude Code / Codex hook 어댑터
 
-`packages/adapters`는 파일 수정 후와 종료 직전에 YAML 규칙을 실행하는
+`packages/adapters`는 파일 수정 후와 종료 직전에 Rust 규칙을 실행하는
 TypeScript hook 라이브러리입니다. 설치·연결 예제는
 [어댑터 사용법](packages/adapters/README.md)에 있습니다.
 
@@ -38,16 +38,15 @@ JSON에는 `schemaVersion`, `exitCode`, 파일별 `syntaxErrors`·`violations`, 
 ## 프로젝트 구성과 웹 플레이그라운드
 
 Rust CLI는 저장소 루트에서 Cargo로 관리하고, 웹 프로젝트는 npm workspaces의
-`apps/web`에서 관리합니다. Rust CLI와 YAML 규칙을 웹에서도 그대로 사용합니다.
+`apps/web`에서 관리합니다. Rust CLI와 Rust 규칙을 웹에서도 그대로 사용합니다.
 
 ```text
 ai-lint/
 ├── src/          Rust CLI·분석 엔진
-├── rules/        공통 YAML 규칙
+├── src/rules/    컴파일되는 Rust 규칙
 ├── tests/        Rust 테스트
 └── apps/web/     React + TypeScript 플레이그라운드
     ├── src/      코드 편집기·규칙 목록·결과 화면
-    ├── rules/    웹 데모용 추가 YAML 규칙
     └── server/   로컬 CLI 실행 API
 ```
 
@@ -57,7 +56,7 @@ npm run dev
 ```
 
 표시되는 로컬 주소를 열면 왼쪽에서 TypeScript/TSX 코드를 수정하고, 오른쪽에서
-규칙을 선택한 뒤 검사할 수 있습니다. 예제 3개, YAML 원문 펼치기, 오류 위치 이동,
+규칙을 선택한 뒤 검사할 수 있습니다. 예제 3개, Rust 원문 펼치기, 오류 위치 이동,
 정상·문법 오류·서버 오류 표시를 지원합니다.
 
 웹 서버는 요청 코드를 임시 파일에 저장하고 Rust CLI를 실행한 뒤 파일을 삭제합니다.
@@ -93,62 +92,29 @@ cargo run -- check src/App.tsx
 - `rule`: 진단과 모델 요청 수집용 내부 문맥, `RuleViolation`
 - `rule_engine`: 등록된 규칙 실행 및 위반 결과 수집
 - `model`: 환경 설정, 모델 클라이언트 인터페이스, OpenAI 호환 HTTP 클라이언트
-- `yaml_rule`: YAML 규칙 로딩·검증 및 AST 조건 평가
+- `rules`: 규칙별 Rust 구현과 ID 레지스트리
+- `ast`: 공통 AST 탐색·바인딩 도구
 
-새 규칙은 YAML로 작성해 `--rules`로 지정합니다. `yaml_rule`이 범용 AST 쿼리를 실행하고,
-분석 결과에는 소유권이 독립적인 진단을 저장합니다.
+새 규칙은 Rust로 작성하고 ID로 선택합니다. 분석 결과에는 소유권이 독립적인 진단을 저장합니다.
 
-## YAML 규칙
+## Rust 규칙
 
-규칙은 YAML로만 정의합니다. Rust의 `Rule` 구현이나 규칙 전용 조건을 추가하지 않습니다.
-문법과 캡처·탐색·바인딩 비교의 정확한 의미는 [YAML v2 가이드](docs/yaml-rules.md)에 있습니다.
+규칙은 `src/rules/`에서 `Rule` 트레이트로 작성합니다.
+[규칙 작성 가이드](docs/rust-rules.md)에 새 규칙 추가와 hook 이전 방법을 정리했습니다.
 
 ```sh
-cargo run -- check --rules rules/no-set-state-in-effect.yaml src/App.tsx
-cargo run -- check --rules first.yaml --rules second.yaml src/App.tsx
+cargo run -- rules
+cargo run -- check --rules no-alert --rules no-console-log src/App.tsx
 ```
 
-`--rules`를 지정하면 나열한 YAML만 실행합니다. 생략하면
-`rules/no-set-state-in-effect.yaml`을 빌드 시 포함한 기본 규칙을 실행합니다.
-자동 디렉터리 탐색은 하지 않으며 기본 규칙 변경 반영에는 재빌드가 필요합니다.
-중복 ID, 읽기 실패, 잘못된 YAML, 쿼리 실행 한도 초과는 실행 오류(종료 코드 `2`)입니다.
+규칙 ID: `no-set-state-in-effect`, `no-console-log`, `no-alert`,
+`contextual-effect`, `prefer-functional-transforms`.
+`--rules`를 생략하면 기본 effect 규칙만 실행합니다.
+뒤의 두 규칙은 후보에 대해서만 AI 판단을 요청합니다.
 
-```yaml
-version: 2
-id: no-console-log
-message: console.log를 사용하지 마세요.
-match:
-  kind: CallExpression
-  properties:
-    callee.type: MemberExpression
-    callee.computed: false
-    callee.object.type: Identifier
-    callee.object.name: console
-    callee.property.name: log
-```
-
-AST 노드 속성은 Oxc가 생성한 ESTree JSON의 경로로 접근합니다.
-`at`, `child`, `descendant`, `ancestor`로 탐색하고,
-`capture`와 `same_binding`으로 선언과 참조를 연결할 수 있습니다.
-보고와 모델 요청은 최상위 `match` 노드당 한 번입니다.
-
-`rules/examples/prefer-functional-transforms.yaml`은 지역 빈 배열 선언,
-반복문, 같은 배열의 `push`를 YAML만으로 연결합니다.
-중첩 함수 제외와 함수당 한 번 보고도 YAML의 선택·탐색 범위로 표현합니다.
-후보만 AI에 전달하고, AI가 함수형 표현의 적합성과 동작 보존 여부를 판단합니다.
-이 예제는 기본 활성화되지 않습니다.
-
-기본 effect 규칙도 같은 범용 문법을 사용합니다.
-`useEffect`/`React.useEffect`의 인라인 콜백에서 `setState` 호출 또는
-`useState`/`React.useState`의 배열 구조 분해로 얻은 setter 호출을 찾습니다.
-구조 분해 setter는 실제 바인딩으로 비교하므로 다른 스코프의 같은 이름과 구분됩니다.
-중첩 함수 호출은 포함하며 import 별칭과 값의 간접 전달은 추적하지 않습니다.
-함수 이름 자체의 판별은 YAML의 속성 비교이며 React import 출처를 증명하지 않습니다.
-
-**마이그레이션:** v1과 `callee`, `callback`, `isStateSetter`,
-작업 중이던 `hasLoopAccumulator`는 지원하지 않습니다.
-저장소의 기본·예제·웹 규칙은 v2로 전환했습니다. 외부 규칙은
-[마이그레이션 안내](docs/yaml-rules.md#v1에서-전환)를 따라 수정해야 합니다.
+YAML 규칙 엔진은 제거했습니다. 기존 `--rules FILE.yaml`은 `--rules ID`로,
+hook의 `ruleFiles`는 `ruleIds`로 전환해야 합니다.
+규칙 코드와 AI 판단 기준을 수정하면 재빌드가 필요합니다.
 
 ## 원격 모델 설정
 
@@ -191,39 +157,13 @@ AI_LINT_MODEL_JSON_MODE=false
 
 ## 모델을 사용하는 규칙 추가
 
-YAML에 `judge`를 추가합니다. 별도 Rust 규칙은 작성하지 않습니다.
-
-```yaml
-version: 2
-id: review-function
-message: 함수가 프로젝트 기준을 위반합니다.
-match:
-  kind: [FunctionDeclaration, FunctionExpression, ArrowFunctionExpression]
-judge:
-  context: matched_node
-  criteria: |
-    오류를 기록하지 않고 무시하는 catch 블록이 있으면 violation입니다.
-    그렇지 않으면 pass, 판단에 필요한 문맥이 부족하면 unknown을 반환하세요.
-```
-
-`matched_node`(기본값), `enclosing_function`, `source_file` 문맥을 지원합니다.
-선택한 소스 범위는 설정한 원격 모델 서버로 전송됩니다.
-`violation`이면 YAML 메시지를 보고하고, `pass`면 통과합니다.
-`unknown`·모델 미설정·통신 오류는 실행 오류입니다.
-후보가 없으면 모델을 호출하지 않습니다.
-
-Rust에서 호출할 때도 YAML을 로드합니다.
-
-```rust
-let rule = ai_lint::yaml_rule::YamlRule::load("rules/examples/contextual-effect.yaml")?;
-let engine = ai_lint::rule_engine::RuleEngine::new(vec![rule]);
-```
-
-모델 클라이언트는 기존 `RuleEngine::with_model`로 주입합니다.
-실행 예제 역시 YAML 규칙 파일을 받습니다.
+Rust 규칙에서 `RuleContext::request_model_with_message`로 후보와 판단 기준을 전달합니다.
+선택한 소스가 설정한 원격 서버로 전송되며, 후보가 없으면 모델 요청도 없습니다.
+`violation`은 진단, `pass`는 통과, `unknown`·모델 미설정·통신 오류는 실행 오류입니다.
+`.env`는 매 검사마다 읽으므로 값 변경 시 재빌드하지 않습니다.
 
 ```sh
-cargo run --example model_rule -- src/App.tsx rules/examples/contextual-effect.yaml
+cargo run --example model_rule -- src/App.tsx contextual-effect
 cargo test --locked --offline
 cargo fmt --check
 cargo clippy --locked --offline --all-targets -- -D warnings

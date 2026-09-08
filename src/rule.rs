@@ -1,7 +1,14 @@
 //! Shared contract and owned diagnostics for AST rules.
 
 use crate::model::ModelRequest;
+use oxc_semantic::Semantic;
 use oxc_span::Span;
+
+/// Rules are compiled Rust implementations, selected by stable IDs.
+pub trait Rule {
+    fn id(&self) -> &'static str;
+    fn check(&self, semantic: &Semantic<'_>, context: &mut RuleContext<'_>);
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RuleViolation {

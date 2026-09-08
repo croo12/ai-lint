@@ -84,11 +84,11 @@ fn env_file_loads_and_environment_overrides_it_without_model_calls_for_static_ru
 }
 
 #[test]
-fn yaml_rules_run_and_duplicate_ids_are_rejected() {
+fn compiled_rules_run_and_duplicate_ids_are_rejected() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let rule = root.join("rules/no-set-state-in-effect.yaml");
+    let rule = "no-set-state-in-effect";
     let file = root.join("tests/fixtures/effect_with_setter.tsx");
-    let output = cli().arg("--rules").arg(&rule).arg(&file).output().unwrap();
+    let output = cli().arg("--rules").arg(rule).arg(&file).output().unwrap();
     assert_eq!(output.status.code(), Some(1));
     assert!(
         String::from_utf8(output.stderr)
@@ -97,9 +97,9 @@ fn yaml_rules_run_and_duplicate_ids_are_rejected() {
     );
     let output = cli()
         .arg("--rules")
-        .arg(&rule)
+        .arg(rule)
         .arg("--rules")
-        .arg(&rule)
+        .arg(rule)
         .arg(&file)
         .output()
         .unwrap();
@@ -112,16 +112,16 @@ fn yaml_rules_run_and_duplicate_ids_are_rejected() {
 }
 
 #[test]
-fn yaml_load_and_model_errors_exit_two() {
+fn unknown_rules_and_model_errors_exit_two() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     for rule in [
-        "rules/missing.yaml",
-        "rules/examples/contextual-effect.yaml",
+        "missing",
+        "contextual-effect",
         "tests/fixtures/effect_with_setter.tsx",
     ] {
         let output = cli()
             .arg("--rules")
-            .arg(root.join(rule))
+            .arg(rule)
             .arg(root.join("tests/fixtures/effect_with_setter.tsx"))
             .output()
             .unwrap();

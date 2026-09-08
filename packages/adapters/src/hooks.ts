@@ -6,15 +6,21 @@ import { AiLintAdapter, type LintReport } from './runner.js';
 const configSchema = z.object({
   workspace: z.string().min(1), binary: z.string().min(1),
   workspaceFromCwd: z.boolean().optional(),
-  ruleFiles: z.array(z.string().min(1)).optional(), envFile: z.string().min(1).optional(),
+  ruleIds: z.array(z.string().min(1)).optional(), envFile: z.string().min(1).optional(),
   sourceRoots: z.array(z.string().min(1)).min(1).default(['.']),
   timeoutMs: z.number().int().min(1).max(3600000).default(60000),
 }).strict();
 export type HookConfig = z.infer<typeof configSchema>;
 export type HookOutput = { decision?: 'block'; reason?: string; systemMessage?: string };
 
-export async function loadHookConfig(path: string): Promise<HookConfig> {
-  const config = configSchema.parse(JSON.parse(await readFile(path, 'utf8')));
+export async function loadHookConfig(path: string, replacementRuleIds?: string[]): Promise<HookConfig> {
+  const raw = JSON.parse(await readFile(path, 'utf8'));
+  if (raw && typeof raw === 'object' && 'ruleFiles' in raw) {
+    if (!replacementRuleIds) throw new Error('Legacy ruleFiles configuration; reinstall with --rules ID');
+    delete raw.ruleFiles;
+    raw.ruleIds = replacementRuleIds;
+  }
+  const config = configSchema.parse(raw);
   config.workspace = resolve(dirname(resolve(path)), config.workspace);
   return config;
 }

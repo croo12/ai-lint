@@ -4,12 +4,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const root = fileURLToPath(new URL('../', import.meta.url));
 const repository = fileURLToPath(new URL('../../../', import.meta.url));
 const catalog = [
-  { id: 'no-set-state-in-effect', name: 'Effect 안의 상태 변경', description: 'useEffect 콜백에 포함된 state setter 호출을 찾습니다.', tag: 'React', file: join(repository, 'rules/no-set-state-in-effect.yaml') },
-  { id: 'no-console-log', name: '디버깅 로그', description: '코드에 남아 있는 console.log 호출을 찾습니다.', tag: 'Quality', file: join(root, 'rules/no-console-log.yaml') },
-  { id: 'no-alert', name: '브라우저 알림', description: 'alert와 window.alert 호출을 찾습니다.', tag: 'UX', file: join(root, 'rules/no-alert.yaml') },
+  { id: 'no-set-state-in-effect', name: 'Effect 안의 상태 변경', description: 'useEffect 콜백에 포함된 state setter 호출을 찾습니다.', tag: 'React', file: join(repository, 'src/rules/no_set_state_in_effect.rs') },
+  { id: 'no-console-log', name: '디버깅 로그', description: '코드에 남아 있는 console.log 호출을 찾습니다.', tag: 'Quality', file: join(repository, 'src/rules/no_console_log.rs') },
+  { id: 'no-alert', name: '브라우저 알림', description: 'alert와 window.alert 호출을 찾습니다.', tag: 'UX', file: join(repository, 'src/rules/no_alert.rs') },
 ];
 
 function respond(res, status, body) {
@@ -24,7 +23,7 @@ async function inspect(source, selected) {
     await writeFile(file, source, 'utf8');
     const executable = join(repository, 'target/debug', process.platform === 'win32' ? 'ai-lint.exe' : 'ai-lint');
     const args = ['check', '--env-file', join(folder, 'no-model.env')];
-    for (const rule of selected) args.push('--rules', rule.file);
+    for (const rule of selected) args.push('--rules', rule.id);
     args.push(file);
     const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('AI_LINT_MODEL_')));
     const result = await new Promise((resolve, reject) => {
@@ -52,7 +51,7 @@ export async function apiMiddleware(req, res, next) {
   if (req.headers.origin && req.headers.origin !== `http://${req.headers.host}`) return respond(res, 403, { error: '허용되지 않은 요청입니다.' });
   try {
     if (path === '/api/rules' && req.method === 'GET') {
-      const rules = await Promise.all(catalog.map(async ({ file, ...rule }) => ({ ...rule, yaml: await readFile(file, 'utf8') })));
+      const rules = await Promise.all(catalog.map(async ({ file, ...rule }) => ({ ...rule, source: await readFile(file, 'utf8') })));
       return respond(res, 200, { rules });
     }
     if (path !== '/api/check' || req.method !== 'POST') return respond(res, 404, { error: '요청을 찾을 수 없습니다.' });

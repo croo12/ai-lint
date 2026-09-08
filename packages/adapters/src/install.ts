@@ -1,3 +1,5 @@
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { randomUUID } from 'node:crypto';
 import { homedir } from 'node:os';
 import { mkdir, readFile, realpath, rename, rm, stat, writeFile } from 'node:fs/promises';
@@ -12,7 +14,7 @@ export interface InstallOptions {
   agent?: 'claude-code' | 'codex' | 'both';
   binary?: string;
   sourceRoots?: string[];
-  ruleFiles?: string[];
+  ruleIds?: string[];
   envFile?: string;
   timeoutMs?: number;
   hookTimeoutSeconds?: number;
@@ -88,14 +90,14 @@ export async function installHooks(options: InstallOptions = {}): Promise<Instal
   const configPath = join(workspace, options.global ? '.claude/ai-lint' : '.ai-lint', 'adapter.json');
   await checkTarget(workspace, configPath);
   const oldConfig = await readOptional(configPath);
-  const previous = oldConfig === null ? undefined : await loadHookConfig(configPath);
+  const previous = oldConfig === null ? undefined : await loadHookConfig(configPath, options.ruleIds);
   if (previous && await realpath(previous.workspace) !== workspace) throw new Error('Existing adapter config targets a different workspace');
   const config: HookConfig = {
     workspace,
     ...(options.global ? { workspaceFromCwd: true } : {}),
     binary: options.binary ? resolve(workspace, options.binary) : previous?.binary ?? join(repository, 'target/release', process.platform === 'win32' ? 'ai-lint.exe' : 'ai-lint'),
     sourceRoots: options.sourceRoots ?? previous?.sourceRoots ?? ['.'],
-    ruleFiles: options.global && options.ruleFiles ? options.ruleFiles.map(file => resolve(file)) : options.ruleFiles ?? previous?.ruleFiles,
+    ruleIds: options.ruleIds ?? previous?.ruleIds,
     envFile: options.envFile ?? previous?.envFile ?? '.env',
     timeoutMs: options.timeoutMs ?? previous?.timeoutMs ?? 60000,
   };
@@ -105,7 +107,11 @@ export async function installHooks(options: InstallOptions = {}): Promise<Instal
   for (const root of config.sourceRoots) {
     if (!within(workspace, await realpath(resolve(workspace, root)))) throw new Error('sourceRoots must stay inside workspace');
   }
-  for (const rule of config.ruleFiles ?? []) { if (!(await stat(resolve(workspace, rule))).isFile()) throw new Error('Rule file does not exist'); }
+  if (config.ruleIds?.length) {
+    const { stdout } = await promisify(execFile)(resolve(workspace, config.binary), ['rules'], { timeout: 10000 });
+    const available = new Set(stdout.trim().split(/\r?\n/));
+    if (new Set(config.ruleIds).size !== config.ruleIds.length || config.ruleIds.some(id => !available.has(id))) throw new Error('Unknown or duplicate rule ID; run ai-lint rules');
+  }
   const timeout = options.hookTimeoutSeconds ?? Math.ceil(config.timeoutMs / 1000) + 30;
   const plan = [{ path: configPath, old: oldConfig, content: `${JSON.stringify(config, null, 2)}\n` }];
   for (const host of agent === 'both' ? ['claude-code', 'codex'] : [agent]) {

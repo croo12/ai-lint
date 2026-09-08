@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { installHooks } from '../dist/index.js';
+import { installHooks, loadHookConfig, AiLintAdapter } from '../dist/index.js';
 
 const repository = fileURLToPath(new URL('../../../', import.meta.url));
 const binary = join(repository, 'target/debug', process.platform === 'win32' ? 'ai-lint.exe' : 'ai-lint');
@@ -18,6 +18,29 @@ async function fixture(t) {
   await mkdir(join(workspace, 'src'));
   return { workspace, binary, sourceRoots: ['src'] };
 }
+
+test('compiled IDs replace legacy rule paths and are passed unchanged to the CLI', async t => {
+  const options = await fixture(t);
+  const directory = join(options.workspace, '.ai-lint');
+  await mkdir(directory);
+  const path = join(directory, 'adapter.json');
+  const original = JSON.stringify({ ...options, ruleFiles: ['/removed/rules/no-alert.yaml'] });
+  await writeFile(path, original);
+  await assert.rejects(loadHookConfig(path), /reinstall/);
+  const result = await installHooks({ ...options, ruleIds: ['no-alert'] });
+  const config = await loadHookConfig(path);
+  assert.deepEqual(config.ruleIds, ['no-alert']);
+  assert.equal('ruleFiles' in config, false);
+  assert.ok((await Promise.all(result.backups.map(file => readFile(file, 'utf8')))).includes(original));
+  await writeFile(join(options.workspace, 'src/input.ts'), 'alert(1); console.log(2);');
+  const report = await new AiLintAdapter(config).check(['src/input.ts']);
+  assert.equal(report.exitCode, 1);
+  assert.deepEqual(report.files[0].violations.map(v => v.ruleId), ['no-alert']);
+  const saved = await readFile(path, 'utf8');
+  await assert.rejects(installHooks({ ...options, ruleIds: ['missing'] }), /Unknown/);
+  await assert.rejects(installHooks({ ...options, ruleIds: ['no-alert', 'no-alert'] }), /duplicate/);
+  assert.equal(await readFile(path, 'utf8'), saved);
+});
 
 test('installation preserves existing settings, backs up originals and is idempotent', async t => {
   const options = await fixture(t);

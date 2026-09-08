@@ -12,7 +12,7 @@ for (const [name, expected] of [['pass', 0], ['violation', 1], ['no-candidate', 
   const start = performance.now();
   const result = await new Promise((accept, reject) => {
     execFile(binary, ['check', '--format', 'json', '--env-file', join(root, '.env'),
-      '--rules', join(root, 'rules/examples/contextual-effect.yaml'),
+      '--rules', 'contextual-effect',
       join(root, `tests/fixtures/live-model/${name}.tsx`)],
     { cwd: root, windowsHide: true, timeout: 45000, maxBuffer: 1024 * 1024 }, (error, stdout) => {
       if (error && ![1, 2].includes(error.code)) return reject(error);

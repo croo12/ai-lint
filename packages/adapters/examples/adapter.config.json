@@ -2,7 +2,7 @@
   "workspace": "C:/path/to/your-project",
   "binary": "C:/path/to/ai-lint/target/release/ai-lint.exe",
   "sourceRoots": ["src"],
-  "ruleFiles": ["C:/path/to/ai-lint/rules/no-set-state-in-effect.yaml"],
+  "ruleIds": ["no-set-state-in-effect"],
   "envFile": ".env",
   "timeoutMs": 60000
 }

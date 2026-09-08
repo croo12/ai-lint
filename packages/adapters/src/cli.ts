@@ -14,10 +14,10 @@ try {
       'dry-run': { type: 'boolean' }, global: { type: 'boolean' }, help: { type: 'boolean' },
     } });
     if (values.help) {
-      process.stdout.write('ai-lint-hook install [--agent both|claude-code|codex] [--global (claude-code only)] [--workspace PATH] [--bin PATH] [--source-root PATH ...] [--rules FILE ...] [--env-file FILE] [--timeout-ms 60000] [--hook-timeout 90] [--dry-run]\n');
+      process.stdout.write('ai-lint-hook install [--agent both|claude-code|codex] [--global (claude-code only)] [--workspace PATH] [--bin PATH] [--source-root PATH ...] [--rules ID ...] [--env-file FILE] [--timeout-ms 60000] [--hook-timeout 90] [--dry-run]\n');
     } else {
       const result = await installHooks({ agent: values.agent as 'both' | 'claude-code' | 'codex', workspace: values.workspace,
-        global: values.global, binary: values.bin, sourceRoots: values['source-root'], ruleFiles: values.rules, envFile: values['env-file'],
+        global: values.global, binary: values.bin, sourceRoots: values['source-root'], ruleIds: values.rules, envFile: values['env-file'],
         timeoutMs: values['timeout-ms'] ? Number(values['timeout-ms']) : undefined,
         hookTimeoutSeconds: values['hook-timeout'] ? Number(values['hook-timeout']) : undefined, dryRun: values['dry-run'] });
       process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);

@@ -1,20 +1,19 @@
-//! Explicit opt-in example: sends the input file to the configured server.
+//! Explicit opt-in example: a compiled rule sends candidate excerpts to the model.
 use std::{env, error::Error, process::ExitCode};
 
 use ai_lint::{
     analyzer::Analyzer,
     model::{ModelConfig, ModelError, OpenAiCompatibleClient},
-    rule_engine::RuleEngine,
-    yaml_rule::YamlRule,
+    rules,
 };
 
 fn run() -> Result<ExitCode, Box<dyn Error>> {
     let args: Vec<_> = env::args().skip(1).collect();
     if args.len() != 2 {
-        return Err("usage: cargo run --example model_rule -- FILE RULE.yaml".into());
+        return Err("usage: cargo run --example model_rule -- FILE RULE_ID".into());
     }
     let config = ModelConfig::load(".env")?.ok_or(ModelError::NotConfigured)?;
-    let engine = RuleEngine::new(vec![YamlRule::load(&args[1])?])
+    let engine = rules::select(&[args[1].clone()])?
         .with_model(Box::new(OpenAiCompatibleClient::new(config)?));
     let analyzed = Analyzer::analyze_file_with_rules(args[0].as_ref(), &engine)?;
     for error in &analyzed.syntax_errors {

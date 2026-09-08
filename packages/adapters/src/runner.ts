@@ -16,12 +16,12 @@ export type LintReport = z.infer<typeof reportSchema>;
 export interface AdapterOptions {
   workspace: string;
   binary: string;
-  ruleFiles?: string[];
+  ruleIds?: string[];
   envFile?: string;
   timeoutMs?: number;
 }
 
-/** The executable, rule paths and env file are configured by the host, not tool input. */
+/** The executable, rule IDs and env file are configured by the host, not tool input. */
 export class AiLintAdapter {
   readonly options: AdapterOptions;
   constructor(options: AdapterOptions) {
@@ -29,7 +29,7 @@ export class AiLintAdapter {
     const timeoutMs = options.timeoutMs ?? 60000;
     if (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 3600000) throw new Error('timeoutMs must be between 1 and 3600000');
     const workspace = resolve(options.workspace);
-    this.options = { workspace, binary: resolve(workspace, options.binary), ruleFiles: options.ruleFiles?.map(path => resolve(workspace, path)), envFile: resolve(workspace, options.envFile ?? '.env'), timeoutMs };
+    this.options = { workspace, binary: resolve(workspace, options.binary), ruleIds: options.ruleIds, envFile: resolve(workspace, options.envFile ?? '.env'), timeoutMs };
   }
 
   async check(files: string[], signal?: AbortSignal): Promise<LintReport> {
@@ -45,7 +45,7 @@ export class AiLintAdapter {
       paths.push(path);
     }
     const args = ['check', '--format', 'json', '--env-file', this.options.envFile!];
-    for (const rule of this.options.ruleFiles ?? []) args.push('--rules', rule);
+    for (const rule of this.options.ruleIds ?? []) args.push('--rules', rule);
     args.push('--', ...new Set(paths));
     const { stdout, code } = await new Promise<{ stdout: string; code: number }>((accept, reject) => {
       execFile(this.options.binary, args, { cwd: workspace, timeout: this.options.timeoutMs, maxBuffer: 4 * 1024 * 1024, encoding: 'utf8', windowsHide: true, signal }, (error, stdout) => {

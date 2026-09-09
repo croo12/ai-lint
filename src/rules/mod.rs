@@ -2,6 +2,7 @@ pub mod contextual_effect;
 pub mod no_alert;
 pub mod no_console_log;
 pub mod no_set_state_in_effect;
+pub mod no_wildcard_export;
 pub mod prefer_functional_transforms;
 #[cfg(test)]
 mod tests;
@@ -14,6 +15,7 @@ pub const IDS: &[&str] = &[
     "no-alert",
     "contextual-effect",
     "prefer-functional-transforms",
+    "no-wildcard-export",
 ];
 
 pub fn select(ids: &[String]) -> Result<RuleEngine, String> {
@@ -27,6 +29,7 @@ pub fn select(ids: &[String]) -> Result<RuleEngine, String> {
             "no-set-state-in-effect" => Box::new(no_set_state_in_effect::NoSetStateInEffect),
             "no-console-log" => Box::new(no_console_log::NoConsoleLog),
             "no-alert" => Box::new(no_alert::NoAlert),
+            "no-wildcard-export" => Box::new(no_wildcard_export::NoWildcardExport),
             "contextual-effect" => Box::new(contextual_effect::ContextualEffect),
             "prefer-functional-transforms" => {
                 Box::new(prefer_functional_transforms::PreferFunctionalTransforms)

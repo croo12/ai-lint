@@ -108,9 +108,10 @@ cargo run -- check --rules no-alert --rules no-console-log src/App.tsx
 ```
 
 규칙 ID: `no-set-state-in-effect`, `no-console-log`, `no-alert`,
-`contextual-effect`, `prefer-functional-transforms`.
+`contextual-effect`, `prefer-functional-transforms`, `no-wildcard-export`.
 `--rules`를 생략하면 기본 effect 규칙만 실행합니다.
-뒤의 두 규칙은 후보에 대해서만 AI 판단을 요청합니다.
+`contextual-effect`와 `prefer-functional-transforms`는 후보에 대해서만 AI 판단을 요청합니다.
+`no-wildcard-export`는 `export *` 대신 필요한 이름을 명시하도록 검사하는 AST 규칙입니다.
 
 YAML 규칙 엔진은 제거했습니다. 기존 `--rules FILE.yaml`은 `--rules ID`로,
 hook의 `ruleFiles`는 `ruleIds`로 전환해야 합니다.

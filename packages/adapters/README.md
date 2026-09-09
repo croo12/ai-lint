@@ -107,11 +107,18 @@ hook에 대한 신뢰 검토가 필요합니다. lifecycle hooks를 지원하는
 ## 동작과 한계
 
 - 파일 경로가 있는 `Write/Edit` 이벤트는 해당 파일을 검사합니다.
-- 셸·패치 이벤트와 `Stop`은 `sourceRoots`의 JS/TS 파일을 재귀 탐색합니다.
+- `Stop`은 Git의 staged·unstaged 변경과 untracked 파일만 검사합니다.
+  삭제된 파일, 검사 범위 밖의 파일, 변경 없이 이미 커밋된 파일은 제외합니다.
+  파일명은 NUL 구분으로 처리해 공백·개행을 지원하며, rename 대상도 검사합니다.
+  새 파일은 `.gitignore`를 따릅니다. 검사 대상 파일의 현재 전체 내용을 읽으며
+  index에 저장된 내용이나 diff의 변경 행만 검사하는 것은 아닙니다.
+  변경 파일이 없으면 검사기를 실행하지 않습니다. Git 저장소가 아니면 안내 후
+  Stop 검사를 건너뛰고, Git 실행 실패는 오류로 보고합니다.
+- 셸·패치 `PostToolUse` 이벤트는 기존처럼 `sourceRoots`의 JS/TS 파일을 재귀 탐색합니다.
   Git 저장소가 아니어도 동작하며 이미 커밋한 코드도 검사합니다.
 - `node_modules`, `.git`, `target`, `dist`, `build`, `.next`, `coverage`,
   `test-results`, `playwright-report` 디렉터리는 탐색에서 제외합니다.
-  `.gitignore` 패턴은 해석하지 않으며 디렉터리 심볼릭 링크는 재귀 탐색하지 않습니다.
+  재귀 탐색은 `.gitignore` 패턴을 해석하지 않으며 디렉터리 심볼릭 링크를 따라가지 않습니다.
 - 소스 수정·명령 실행은 수행하지 않으며 원본 파일은 읽기만 합니다.
   지정한 실행 파일을 shell 없이 호출하고 JSON 결과를 검증합니다.
 - 정상 결과는 `{}`, 규칙 위반·문법 오류·검사 실패는

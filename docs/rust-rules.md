@@ -39,6 +39,14 @@ target/release/ai-lint check --rules no-alert --rules no-console-log src/App.tsx
 알 수 없는 ID, 중복 ID는 오류입니다. ID 대신 YAML 경로나 Rust 파일 경로를 넘길 수 없습니다.
 Rust 호출부는 `RuleEngine::new(vec![Box::new(MyRule)])` 또는 `rules::select`를 사용합니다.
 
+## 와일드카드 export 금지
+
+`no-wildcard-export`는 `export *`, `export type *`, `export * as name` 및
+`export type * as name`을 금지하는 AST 전용 규칙입니다. 필요한 이름을
+`export { Foo, bar } from './module'`처럼 명시하세요. 이름 있는 export,
+default export, namespace import는 허용합니다. 실제 외부 사용 여부는
+프로젝트 간 참조 분석을 수행하지 않으므로 이 규칙만으로 증명하지 않습니다.
+
 ## AI 판단
 
 `context.request_model_with_message(span, criteria, source, message)`로 요청을 수집합니다.

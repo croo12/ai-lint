@@ -139,6 +139,51 @@ fn selection_rejects_unknown_and_duplicate_ids() {
         assert!(select(&[(*id).into()]).is_ok());
     }
 }
+
+#[test]
+fn wildcard_exports_report_each_declaration_without_a_model() {
+    let engine = select(&["no-wildcard-export".into()]).unwrap();
+    for export in [
+        "export * from 'module';",
+        "export type * from 'module';",
+        "export * as namespace from 'module';",
+        "export type * as types from 'module';",
+    ] {
+        let source = format!("// 한글\n{export}");
+        let result = Analyzer::analyze_source_with_rules("index.ts", &source, &engine).unwrap();
+        assert!(result.syntax_errors.is_empty(), "{export}");
+        assert_eq!(result.rule_violations.len(), 1, "{export}");
+        let violation = &result.rule_violations[0];
+        assert_eq!(violation.rule_id, "no-wildcard-export");
+        assert_eq!(
+            &source[violation.span.start as usize..violation.span.end as usize],
+            export
+        );
+    }
+    assert_eq!(
+        check(
+            "no-wildcard-export",
+            "export * from 'a'; export * from 'b';"
+        )
+        .len(),
+        2
+    );
+}
+
+#[test]
+fn explicit_exports_and_namespace_imports_are_allowed() {
+    for source in [
+        "export { foo, bar as publicBar } from 'module';",
+        "export type { Foo } from 'module';",
+        "const foo = 1; export { foo };",
+        "export const foo = 1; export default foo;",
+        "import * as namespace from 'module'; export { namespace };",
+        "// export * from 'module';\nconst text = \"export * from 'module'\";",
+        "export function* items() { yield 1; }",
+    ] {
+        assert!(check("no-wildcard-export", source).is_empty(), "{source}");
+    }
+}
 #[test]
 fn simple_rules_match_only_expected_calls() {
     assert_eq!(

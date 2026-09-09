@@ -4,7 +4,7 @@ import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { execFile, spawn } from 'node:child_process';
+import { execFile, spawn, spawnSync } from 'node:child_process';
 import { promisify } from 'node:util';
 import { AiLintAdapter, handleHook, claudeCodeHooks, codexHooks } from '../dist/index.js';
 
@@ -48,7 +48,7 @@ test('Codex apply_patch and shell events detect untracked and staged edits', asy
   assert.equal(output.decision, 'block');
 });
 
-test('Stop scans scoped sources and repeated Stop has explicit loop protection', async t => {
+test('Stop checks scoped Git changes and repeated Stop has explicit loop protection', async t => {
   const config = await fixture(t);
   assert.equal((await handleHook(config, { hook_event_name: 'Stop', stop_hook_active: false })).decision, 'block');
   const repeated = await handleHook(config, { hook_event_name: 'Stop', stop_hook_active: true });
@@ -58,6 +58,55 @@ test('Stop scans scoped sources and repeated Stop has explicit loop protection',
   await writeFile(join(config.workspace, 'outside-scope.ts'), bad);
   assert.deepEqual(await handleHook(config, { hook_event_name: 'Stop' }), {});
   assert.equal((await handleHook({ ...config, sourceRoots: ['missing-directory'] }, { hook_event_name: 'Stop' })).decision, 'block');
+});
+
+async function commitFixture(config) {
+  await exec('git', ['-C', config.workspace, 'add', '.']);
+  await exec('git', ['-C', config.workspace, '-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', '-c', 'commit.gpgsign=false', 'commit', '-m', 'fixture']);
+}
+
+test('Stop ignores committed violations and checks staged, unstaged and untracked files', async t => {
+  const config = await fixture(t);
+  await writeFile(join(config.workspace, 'src/changed.ts'), good);
+  await writeFile(join(config.workspace, '.gitignore'), 'src/ignored.ts\n');
+  await commitFixture(config);
+  await writeFile(join(config.workspace, 'src/ignored.ts'), bad);
+  assert.deepEqual(await handleHook(config, { hook_event_name: 'Stop' }), {});
+  await writeFile(join(config.workspace, 'src/changed.ts'), bad);
+  let result = await handleHook(config, { hook_event_name: 'Stop' });
+  assert.equal(result.decision, 'block');
+  assert.match(result.reason, /changed\.ts/);
+  assert.ok(!result.reason.includes('file with spaces'));
+  await exec('git', ['-C', config.workspace, 'add', 'src/changed.ts']);
+  assert.equal((await handleHook(config, { hook_event_name: 'Stop' })).decision, 'block');
+  await writeFile(join(config.workspace, 'src/changed.ts'), good);
+  assert.deepEqual(await handleHook(config, { hook_event_name: 'Stop' }), {}); // Current file contents, not index contents.
+  await writeFile(join(config.workspace, 'src/new\nfile.ts'), bad);
+  result = await handleHook(config, { hook_event_name: 'Stop' });
+  assert.equal(result.decision, 'block');
+  assert.ok(result.reason.includes('new\nfile.ts'));
+  await rm(join(config.workspace, 'src/new\nfile.ts'));
+  await rm(join(config.workspace, 'src/file with spaces.tsx'));
+  assert.deepEqual(await handleHook(config, { hook_event_name: 'Stop' }), {});
+});
+
+test('Stop supports staged renames and repository subdirectories', async t => {
+  const config = await fixture(t);
+  await commitFixture(config);
+  await exec('git', ['-C', config.workspace, 'mv', 'src/file with spaces.tsx', 'src/renamed.tsx']);
+  const scoped = { ...config, workspace: join(config.workspace, 'src'), sourceRoots: ['.'] };
+  const result = await handleHook(scoped, { hook_event_name: 'Stop' });
+  assert.equal(result.decision, 'block');
+  assert.match(result.reason, /renamed\.tsx/);
+});
+
+test('Stop skips non-Git projects without scanning their sources', async t => {
+  const workspace = await mkdtemp(join(tmpdir(), 'ai-lint-non-git-'));
+  t.after(() => rm(workspace, { recursive: true, force: true }));
+  await writeFile(join(workspace, 'bad.ts'), bad);
+  const result = await handleHook({ workspace, binary, sourceRoots: ['.'], timeoutMs: 10000 }, { hook_event_name: 'Stop' });
+  assert.equal(result.decision, undefined);
+  assert.match(result.systemMessage, /Git 저장소가 아니므로/);
 });
 
 test('runner handles syntax errors, missing binaries and workspace escape', async t => {
@@ -101,6 +150,30 @@ test('global hooks follow each event cwd instead of the installation workspace',
   assert.match((await handleHook(global, { hook_event_name: 'Stop' })).reason, /absolute cwd/);
   await writeFile(join(config.workspace, 'src/file with spaces.tsx'), good);
   assert.deepEqual(await handleHook(global, { hook_event_name: 'Stop', cwd: config.workspace }), {});
+});
+
+test('CLI separates configuration and stdin errors without exposing their contents', async t => {
+  const config = await fixture(t);
+  const path = join(config.workspace, 'adapter.json');
+  const payload = JSON.stringify({ hook_event_name: 'PostToolUse', tool_name: 'Read' });
+  const invoke = input => {
+    const result = spawnSync(process.execPath, [entry, '--config', path], { input, encoding: 'utf8' });
+    assert.equal(result.status, 0);
+    assert.equal(result.stderr, '');
+    assert.ok(!result.stdout.includes('secret-value'));
+    return JSON.parse(result.stdout);
+  };
+  assert.match(invoke(payload).reason, /configuration file not found/);
+  await writeFile(path, '{secret-value');
+  assert.match(invoke(payload).reason, /configuration file contains invalid JSON/);
+  await writeFile(path, JSON.stringify({ ...config, ruleFiles: ['secret-value'] }));
+  assert.match(invoke(payload).reason, /Legacy ruleFiles.*reinstall/);
+  await writeFile(path, JSON.stringify({ ...config, timeoutMs: 'secret-value' }));
+  assert.match(invoke(payload).reason, /configuration schema/);
+  await writeFile(path, '\uFEFF' + JSON.stringify(config));
+  assert.match(invoke('secret-value').reason, /stdin JSON/);
+  assert.match(invoke('').reason, /stdin JSON/);
+  assert.deepEqual(invoke('\uFEFF' + payload), {});
 });
 
 test('host config generators include synchronous PostToolUse and Stop commands', () => {

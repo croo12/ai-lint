@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 import { parseArgs } from 'node:util';
-import { handleHook, loadHookConfig } from './hooks.js';
+import { handleHook, loadHookConfig, HookConfigError } from './hooks.js';
 import { installHooks } from './install.js';
 
 const installing = process.argv[2] === 'install';
+let phase: 'arguments' | 'stdin' | 'configuration' = 'arguments';
 
 try {
   if (installing) {
@@ -29,6 +30,7 @@ try {
     process.stderr.write('ai-lint-hook --config PATH < hook-input.json\n');
   } else {
     if (!values.config) throw new Error('--config is required');
+    phase = 'stdin';
     const chunks: Buffer[] = [];
     let size = 0;
     for await (const chunk of process.stdin) {
@@ -37,7 +39,9 @@ try {
       if (size > 2 * 1024 * 1024) throw new Error('Hook input exceeds 2 MiB');
       chunks.push(buffer);
     }
-    const output = await handleHook(await loadHookConfig(values.config), JSON.parse(Buffer.concat(chunks).toString('utf8')));
+    const payload: unknown = JSON.parse(Buffer.concat(chunks).toString('utf8').replace(/^\uFEFF/, ''));
+    phase = 'configuration';
+    const output = await handleHook(await loadHookConfig(values.config), payload);
     process.stdout.write(`${JSON.stringify(output)}\n`);
   }
   }
@@ -46,6 +50,10 @@ try {
     process.stderr.write(`ai-lint install failed: ${error instanceof Error ? error.message : 'unknown error'}\n`);
     process.exitCode = 1;
   } else {
-  process.stdout.write(`${JSON.stringify({ decision: 'block', reason: 'ai-lint hook: invalid configuration or stdin JSON; check --config and rebuild the adapter' })}\n`);
+  const reason = error instanceof HookConfigError ? error.message
+    : phase === 'stdin' ? 'stdin JSON is empty, malformed, or exceeds 2 MiB; invoke this command as a Claude hook with JSON on stdin'
+    : phase === 'arguments' ? 'invalid command arguments; expected --config PATH'
+    : 'could not load hook configuration; check --config and rebuild the adapter';
+  process.stdout.write(`${JSON.stringify({ decision: 'block', reason: `ai-lint hook: ${reason}` })}\n`);
   }
 }

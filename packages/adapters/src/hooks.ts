@@ -2,6 +2,7 @@ import { readFile, readdir, realpath, stat } from 'node:fs/promises';
 import { dirname, extname, isAbsolute, relative, resolve } from 'node:path';
 import { z } from 'zod';
 import { AiLintAdapter, type LintReport } from './runner.js';
+import { changedFiles } from './git-changes.js';
 
 const configSchema = z.object({
   workspace: z.string().min(1), binary: z.string().min(1),
@@ -13,14 +14,28 @@ const configSchema = z.object({
 export type HookConfig = z.infer<typeof configSchema>;
 export type HookOutput = { decision?: 'block'; reason?: string; systemMessage?: string };
 
+/** Messages are deliberately limited to fixed diagnostics, never raw config values. */
+export class HookConfigError extends Error {}
+
 export async function loadHookConfig(path: string, replacementRuleIds?: string[]): Promise<HookConfig> {
-  const raw = JSON.parse(await readFile(path, 'utf8'));
-  if (raw && typeof raw === 'object' && 'ruleFiles' in raw) {
-    if (!replacementRuleIds) throw new Error('Legacy ruleFiles configuration; reinstall with --rules ID');
-    delete raw.ruleFiles;
-    raw.ruleIds = replacementRuleIds;
+  let text: string;
+  try { text = await readFile(path, 'utf8'); }
+  catch (error) {
+    throw new HookConfigError((error as NodeJS.ErrnoException).code === 'ENOENT'
+      ? 'configuration file not found; check the hook --config path'
+      : 'configuration file cannot be read; check its permissions and --config path');
   }
-  const config = configSchema.parse(raw);
+  let raw: unknown;
+  try { raw = JSON.parse(text.replace(/^\uFEFF/, '')); }
+  catch { throw new HookConfigError('configuration file contains invalid JSON'); }
+  if (raw && typeof raw === 'object' && 'ruleFiles' in raw) {
+    if (!replacementRuleIds) throw new HookConfigError('Legacy ruleFiles configuration; reinstall this hook with --rules ID');
+    delete raw.ruleFiles;
+    Object.assign(raw, { ruleIds: replacementRuleIds });
+  }
+  const parsed = configSchema.safeParse(raw);
+  if (!parsed.success) throw new HookConfigError('configuration schema is invalid; reinstall this hook to generate a valid adapter.json');
+  const config = parsed.data;
   config.workspace = resolve(dirname(resolve(path)), config.workspace);
   return config;
 }
@@ -79,7 +94,9 @@ export async function handleHook(configInput: HookConfig, payload: unknown): Pro
     if (!within(workspace, cwd)) throw new Error('Hook cwd is outside configured workspace');
     let candidates: string[];
     if (input.hook_event_name === 'Stop') {
-      candidates = await scan(roots);
+      const changed = await changedFiles(workspace);
+      if (changed === null) return { systemMessage: 'ai-lint: Git 저장소가 아니므로 Stop 변경 파일 검사를 건너뜁니다.' };
+      candidates = changed.filter(path => !relative(workspace, path).split(/[\\/]/).slice(0, -1).some(part => excludedDirectories.has(part)));
     } else {
       const tool = input.tool_name ?? '';
       if (!['Write', 'Edit', 'MultiEdit', 'apply_patch', 'Bash', 'exec_command', 'write_stdin'].includes(tool)) return {};

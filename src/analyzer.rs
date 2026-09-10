@@ -101,7 +101,9 @@ impl Analyzer {
 
         // Rules only see a successfully parsed program, never a recovered AST.
         let check = if syntax_errors.is_empty() && !result.panicked {
-            rules.check(&result.program).map_err(AnalyzeError::Rule)?
+            rules
+                .check_file(&result.program, path)
+                .map_err(AnalyzeError::Rule)?
         } else {
             Default::default()
         };

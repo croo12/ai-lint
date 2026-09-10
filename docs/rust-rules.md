@@ -26,6 +26,9 @@ impl Rule for NoDebugger {
 파일을 추가한 뒤 `src/rules/mod.rs`에 모듈, `IDS` 항목, `select` 생성 분기를 등록하세요.
 `ast.rs`는 호출 이름·바인딩·상위 함수·반복문 본문·소스 범위를 다루는 공통 도구입니다.
 바인딩은 Oxc 심볼을 사용해 이름 가려짐과 블록 스코프를 구분합니다.
+파일별 정책은 `context.file_path()`에서 경로를 읽습니다. `Analyzer`는 경로를 전달하며,
+엔진을 직접 사용할 때는 `check_file(program, path)`를 사용하세요.
+기존 `check(program)`은 경로가 없으므로 파일명에 제한된 규칙은 실행하지 않습니다.
 새 규칙에는 정상·위반·스코프 경계 사례의 Rust 테스트를 추가합니다.
 
 ```sh
@@ -46,6 +49,59 @@ Rust 호출부는 `RuleEngine::new(vec![Box::new(MyRule)])` 또는 `rules::selec
 `export { Foo, bar } from './module'`처럼 명시하세요. 이름 있는 export,
 default export, namespace import는 허용합니다. 실제 외부 사용 여부는
 프로젝트 간 참조 분석을 수행하지 않으므로 이 규칙만으로 증명하지 않습니다.
+
+## 데이터 요청 hook mock 금지
+
+`no-query-hook-mocking`은 `*.test.ts`와 `*.test.tsx`에만 적용하는 AST 전용 규칙입니다.
+`*.browser.test.tsx`도 포함하고, 일반 소스·`*.spec.ts`·JS 테스트에는 적용하지 않습니다.
+AI 요청이나 다른 소스 파일의 탐색 없이 현재 테스트 파일만 분석합니다.
+
+탐지하는 mock:
+
+- Vitest/Jest의 `mock`, `doMock`, `unstable_mockModule` 모듈 대체 및 자동 mock.
+  `vi.mock(import('...'), factory)`와 `{ spy: true }`도 포함합니다.
+- `spyOn`·`replaceProperty`로 데이터 hook 대체.
+- `mockReturnValue[Once]`, `mockImplementation[Once]`, `mockResolvedValue[Once]`,
+  `mockRejectedValue[Once]`, `withImplementation`으로 hook mock 설정.
+  import 별칭, `vi.mocked(useProjects)`를 저장한 지역 변수, TS 타입 단언을 따라갑니다.
+
+데이터 hook은 `use` + 대문자로 시작하는 이름 중 다음 단서로 분류합니다.
+
+- `Query`·`Queries`·`Mutation`·`Subscription`으로 끝나거나 `useSuspense`로 시작하는 이름,
+  `useSWR`·`useSWRInfinite`·`useSWRMutation`·`useMutationState`.
+- mock/import 모듈 경로에 `api` 세그먼트가 있는 hook. 예: `../../api/use-upload-log`.
+- mock 반환 객체가 `mutate`, `mutateAsync`, `refetch`, `fetchNextPage`를 가지거나,
+  `data`와 `isLoading`/`isPending`/`isError`/`isSuccess`/`error`/`status`/`isFetching`을 함께 가짐.
+  예: `useProjects`, `useBilling`처럼 이름에 Query가 없는 wrapper도 검사합니다.
+- TanStack/React Query, Apollo Client, SWR의 알려진 모듈 전체 자동 mock.
+
+```ts
+// 위반: wrapper도 실제 hook을 우회합니다.
+vi.mock('@entities/project', () => ({
+  useProjects: vi.fn(() => ({ data: [], isLoading: false }))
+}));
+
+// 허용: 실제 hook과 provider를 사용하고 네트워크 응답을 제어합니다.
+server.use(http.get('/projects', () => HttpResponse.json([])));
+```
+
+`vi.fn` 없는 일반 함수 대체도 검사합니다. 부분 mock에서 실제 hook을 그대로 보존하는
+`useQuery: actual.useQuery`나, mock 동작을 설정하지 않는 `vi.mocked(useQuery)` 자체는 허용합니다.
+라우팅·인증 상태·일반 UI hook mock은 위 데이터 hook 단서가 없으면 보고하지 않습니다.
+네트워크 API 함수 자체의 mock, store mock 금지는 이 규칙의 범위가 아닙니다.
+
+단서는 파일 내 정적 휴리스틱이며 데이터 hook임을 타입/구현으로 증명하지 않습니다.
+이름·경로·반환 형태 단서가 없는 커스텀 hook, 동적으로 계산한 이름, 외부 helper에 숨긴 mock,
+직접 대입(`hooks.useQuery = stub`)은 놓칠 수 있습니다. 별칭은 순환 방지를 위해 12단계까지 추적합니다.
+단순한 로컬 `data`/로딩 상태 hook도 같은 형태라면 진단될 수 있습니다.
+
+```sh
+target/release/ai-lint check --rules no-query-hook-mocking src/example.test.tsx
+```
+
+기본 규칙 선택은 바뀌지 않습니다. CLI의 `--rules` 또는 hook 설정의 `ruleIds`에 추가하세요.
+별도 non-blocking severity는 없으며 기존 규칙과 같이 위반 시 CLI exit 1, Claude hook의
+`decision: block` 및 MSW 안내를 반환합니다.
 
 ## AI 판단
 

@@ -36,6 +36,28 @@ test('Claude Write/Edit inputs block findings, allow clean files and ignore non-
   assert.deepEqual(await handleHook(config, { hook_event_name: 'PostToolUse', tool_name: 'Write', tool_input: { file_path: 'src/file with spaces.tsx' } }), {});
 });
 
+test('query hook mocks report MSW guidance only in TypeScript test files', async t => {
+  const config = { ...await fixture(t), ruleIds: ['no-query-hook-mocking'] };
+  const mock = "vi.mock('@tanstack/react-query', () => ({ useQuery: vi.fn() }));";
+  for (const name of ['query.test.ts', 'query.test.tsx', 'query.ts']) {
+    await writeFile(join(config.workspace, 'src', name), mock);
+    const result = await handleHook(config, {
+      hook_event_name: 'PostToolUse', tool_name: 'Edit',
+      tool_input: { file_path: `src/${name}` },
+    });
+    if (name === 'query.ts') {
+      assert.deepEqual(result, {});
+    } else {
+      assert.equal(result.decision, 'block');
+      assert.match(result.reason, /no-query-hook-mocking/);
+      assert.match(result.reason, /MSW/);
+      await writeFile(join(config.workspace, 'src', name),
+        "server.use(http.get('/projects', () => HttpResponse.json([])));");
+    }
+  }
+  assert.deepEqual(await handleHook(config, { hook_event_name: 'Stop' }), {});
+});
+
 test('Codex apply_patch and shell events detect untracked and staged edits', async t => {
   const config = await fixture(t);
   for (const tool_name of ['apply_patch', 'Bash', 'exec_command', 'write_stdin']) {

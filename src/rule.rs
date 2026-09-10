@@ -3,6 +3,7 @@
 use crate::model::ModelRequest;
 use oxc_semantic::Semantic;
 use oxc_span::Span;
+use std::path::Path;
 
 /// Rules are compiled Rust implementations, selected by stable IDs.
 pub trait Rule {
@@ -20,6 +21,7 @@ pub struct RuleViolation {
 
 pub struct RuleContext<'a> {
     rule_id: &'a str,
+    file_path: Option<&'a Path>,
     violations: &'a mut Vec<RuleViolation>,
     model_requests: &'a mut Vec<ModelRequest>,
 }
@@ -27,14 +29,21 @@ pub struct RuleContext<'a> {
 impl<'a> RuleContext<'a> {
     pub(crate) fn new(
         rule_id: &'a str,
+        file_path: Option<&'a Path>,
         violations: &'a mut Vec<RuleViolation>,
         model_requests: &'a mut Vec<ModelRequest>,
     ) -> Self {
         Self {
             rule_id,
+            file_path,
             violations,
             model_requests,
         }
+    }
+
+    /// Available when the caller checks a named source file.
+    pub fn file_path(&self) -> Option<&Path> {
+        self.file_path
     }
 
     pub fn report(&mut self, span: Span, message: impl Into<String>) {

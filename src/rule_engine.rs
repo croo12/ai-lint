@@ -5,6 +5,7 @@ use crate::{
 };
 use oxc_ast::ast::Program;
 use oxc_semantic::SemanticBuilder;
+use std::path::Path;
 
 #[derive(Default)]
 pub struct RuleCheck {
@@ -25,6 +26,16 @@ impl RuleEngine {
         self
     }
     pub fn check(&self, program: &Program<'_>) -> Result<RuleCheck, String> {
+        self.check_with_path(program, None)
+    }
+    pub fn check_file(&self, program: &Program<'_>, path: &Path) -> Result<RuleCheck, String> {
+        self.check_with_path(program, Some(path))
+    }
+    fn check_with_path(
+        &self,
+        program: &Program<'_>,
+        path: Option<&Path>,
+    ) -> Result<RuleCheck, String> {
         let mut check = RuleCheck::default();
         if self.rules.is_empty() {
             return Ok(check);
@@ -34,8 +45,12 @@ impl RuleEngine {
             return Err(format!("semantic analysis failed: {:?}", built.diagnostics));
         }
         for rule in &self.rules {
-            let mut context =
-                RuleContext::new(rule.id(), &mut check.violations, &mut check.model_requests);
+            let mut context = RuleContext::new(
+                rule.id(),
+                path,
+                &mut check.violations,
+                &mut check.model_requests,
+            );
             rule.check(&built.semantic, &mut context);
         }
         Ok(check)

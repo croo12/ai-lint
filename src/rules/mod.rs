@@ -1,6 +1,7 @@
 pub mod contextual_effect;
 pub mod no_alert;
 pub mod no_console_log;
+pub mod no_query_hook_mocking;
 pub mod no_set_state_in_effect;
 pub mod no_wildcard_export;
 pub mod prefer_functional_transforms;
@@ -16,6 +17,7 @@ pub const IDS: &[&str] = &[
     "contextual-effect",
     "prefer-functional-transforms",
     "no-wildcard-export",
+    "no-query-hook-mocking",
 ];
 
 pub fn select(ids: &[String]) -> Result<RuleEngine, String> {
@@ -30,6 +32,7 @@ pub fn select(ids: &[String]) -> Result<RuleEngine, String> {
             "no-console-log" => Box::new(no_console_log::NoConsoleLog),
             "no-alert" => Box::new(no_alert::NoAlert),
             "no-wildcard-export" => Box::new(no_wildcard_export::NoWildcardExport),
+            "no-query-hook-mocking" => Box::new(no_query_hook_mocking::NoQueryHookMocking),
             "contextual-effect" => Box::new(contextual_effect::ContextualEffect),
             "prefer-functional-transforms" => {
                 Box::new(prefer_functional_transforms::PreferFunctionalTransforms)

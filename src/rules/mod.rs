@@ -3,6 +3,8 @@ pub mod no_alert;
 pub mod no_console_log;
 pub mod no_query_hook_mocking;
 pub mod no_set_state_in_effect;
+pub mod no_unsafe_type_assertions;
+pub mod no_useless_comments;
 pub mod no_wildcard_export;
 pub mod prefer_functional_transforms;
 #[cfg(test)]
@@ -18,6 +20,8 @@ pub const IDS: &[&str] = &[
     "prefer-functional-transforms",
     "no-wildcard-export",
     "no-query-hook-mocking",
+    "no-useless-comments",
+    "no-unsafe-type-assertions",
 ];
 
 pub fn select(ids: &[String]) -> Result<RuleEngine, String> {
@@ -33,6 +37,10 @@ pub fn select(ids: &[String]) -> Result<RuleEngine, String> {
             "no-alert" => Box::new(no_alert::NoAlert),
             "no-wildcard-export" => Box::new(no_wildcard_export::NoWildcardExport),
             "no-query-hook-mocking" => Box::new(no_query_hook_mocking::NoQueryHookMocking),
+            "no-useless-comments" => Box::new(no_useless_comments::NoUselessComments),
+            "no-unsafe-type-assertions" => {
+                Box::new(no_unsafe_type_assertions::NoUnsafeTypeAssertions)
+            }
             "contextual-effect" => Box::new(contextual_effect::ContextualEffect),
             "prefer-functional-transforms" => {
                 Box::new(prefer_functional_transforms::PreferFunctionalTransforms)

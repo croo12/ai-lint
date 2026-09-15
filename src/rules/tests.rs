@@ -141,6 +141,63 @@ fn selection_rejects_unknown_and_duplicate_ids() {
 }
 
 #[test]
+fn useless_comments_report_links_decisions_and_code_explanations_but_allow_described_todo() {
+    let source = "// https://example.com/docs\n// TODO\n// TODO: 설명을 보완한다.\n// A 대신 B를 선택했다\n// return 결과를 반환한다\nconst result = 1;";
+    let found = check("no-useless-comments", source);
+    assert_eq!(found.len(), 4);
+    assert!(found.iter().all(|v| v.rule_id == "no-useless-comments"));
+}
+
+#[test]
+fn useless_comments_only_inspects_parser_comments_and_preserves_todo_exceptions() {
+    let engine = select(&["no-useless-comments".into()]).unwrap();
+    for source in [
+        "const text = '// TODO';",
+        "const text = `/* TODO */`;",
+        "const text = '// https://example.com/docs';",
+        "// TODO: A 대신 B를 선택하도록 수정한다.\nconst x = 1;",
+        "/* TODO: https://example.com/docs 확인 */ const x = 1;",
+        "/** TODO: 동작을 수정한다. */ const x = 1;",
+        "// FIXME\n// HACK\nconst x = 1;",
+    ] {
+        let result = Analyzer::analyze_source_with_rules("test.ts", source, &engine).unwrap();
+        assert!(result.syntax_errors.is_empty(), "{source}");
+        assert!(result.rule_violations.is_empty(), "{source}");
+    }
+    for comment in ["// TODO:", "/* TODO */", "/**\n * TODO:\n */"] {
+        let source = format!("const label = '한글';\n{comment}");
+        let result = Analyzer::analyze_source_with_rules("test.ts", &source, &engine).unwrap();
+        assert_eq!(result.rule_violations.len(), 1, "{comment}");
+        let span = result.rule_violations[0].span;
+        assert_eq!(&source[span.start as usize..span.end as usize], comment);
+    }
+}
+
+#[test]
+fn unsafe_type_assertions_require_a_preceding_comment_and_reject_double_assertions() {
+    assert!(check("no-unsafe-type-assertions", "const value = input as const;").is_empty());
+    for source in [
+        "// API response is validated upstream\nconst value = input as User;",
+        "/* legacy boundary */\nconst value = input as User;",
+    ] {
+        assert!(
+            check("no-unsafe-type-assertions", source).is_empty(),
+            "{source}"
+        );
+    }
+    for source in [
+        "const value = input as User;",
+        "// temporary cast\nconst value = input as unknown as User;",
+    ] {
+        assert_eq!(
+            check("no-unsafe-type-assertions", source).len(),
+            1,
+            "{source}"
+        );
+    }
+}
+
+#[test]
 fn wildcard_exports_report_each_declaration_without_a_model() {
     let engine = select(&["no-wildcard-export".into()]).unwrap();
     for export in [

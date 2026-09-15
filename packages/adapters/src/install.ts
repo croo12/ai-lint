@@ -77,9 +77,11 @@ function mergeSettings(text: string | null, generated: ReturnType<typeof codexHo
   return `${JSON.stringify(result, null, 2)}\n`;
 }
 
-/** Validates all files before writing; global installation currently supports Claude Code only. */
+/** Validates all files before writing; global installation targets the selected host. */
 export async function installHooks(options: InstallOptions = {}): Promise<InstallResult> {
-  if (options.global && options.agent !== 'claude-code') throw new Error('Global installation requires --agent claude-code');
+  if (options.global && options.agent !== 'claude-code' && options.agent !== 'codex') {
+    throw new Error('Global installation requires --agent claude-code or codex');
+  }
   if (options.global && options.workspace) throw new Error('--global cannot be combined with --workspace');
   if (options.global && options.sourceRoots) throw new Error('Global installation uses the current project root; omit --source-root');
   const workspace = await realpath(resolve(options.global ? homedir() : options.workspace ?? process.cwd()));
@@ -87,7 +89,8 @@ export async function installHooks(options: InstallOptions = {}): Promise<Instal
   if (!['claude-code', 'codex', 'both'].includes(agent)) throw new Error('agent must be claude-code, codex, or both');
   const entry = fileURLToPath(new URL('./cli.js', import.meta.url));
   const repository = fileURLToPath(new URL('../../../', import.meta.url));
-  const configPath = join(workspace, options.global ? '.claude/ai-lint' : '.ai-lint', 'adapter.json');
+  const globalRoot = options.agent === 'codex' ? '.codex' : '.claude';
+  const configPath = join(workspace, options.global ? `${globalRoot}/ai-lint` : '.ai-lint', 'adapter.json');
   await checkTarget(workspace, configPath);
   const oldConfig = await readOptional(configPath);
   const previous = oldConfig === null ? undefined : await loadHookConfig(configPath, options.ruleIds);
@@ -123,7 +126,7 @@ export async function installHooks(options: InstallOptions = {}): Promise<Instal
   }
   const changed = plan.filter(file => file.old !== file.content);
   if (options.dryRun || !changed.length) return { changed: changed.map(file => file.path), backups: [], dryRun: options.dryRun ?? false };
-  const backupRoot = join(workspace, options.global ? '.claude/ai-lint/backups' : '.ai-lint/backups', `${Date.now()}-${randomUUID()}`);
+  const backupRoot = join(workspace, options.global ? `${globalRoot}/ai-lint/backups` : '.ai-lint/backups', `${Date.now()}-${randomUUID()}`);
   await checkTarget(workspace, backupRoot);
   const backups = [];
   for (const file of changed) {

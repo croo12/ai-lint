@@ -16,5 +16,6 @@ export function claudeCodeHooks(entry: string, config: string, timeoutSeconds = 
 }
 /** Merge into .codex/hooks.json; requires a Codex version with lifecycle hooks. */
 export function codexHooks(entry: string, config: string, timeoutSeconds = 90) {
-  return hooks(entry, config, '^(Write|Edit|apply_patch|Bash|exec_command|write_stdin)$', timeoutSeconds);
+  // Shell commands do not reliably identify their changed files; Stop performs the Git-scoped scan.
+  return hooks(entry, config, '^(Write|Edit|apply_patch)$', timeoutSeconds);
 }

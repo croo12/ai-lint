@@ -4,7 +4,7 @@ import { mkdtemp, mkdir, readFile, writeFile, rm, access } from 'node:fs/promise
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { execFile } from 'node:child_process';
+import { execFile, spawnSync } from 'node:child_process';
 import { promisify } from 'node:util';
 import { installHooks, loadHookConfig, AiLintAdapter } from '../dist/index.js';
 
@@ -106,8 +106,16 @@ test('global Claude installer targets user settings and preserves them on repeat
   assert.equal((await json(join(options.workspace, '.claude/settings.json'))).hooks.Stop.length, 1);
   const repeated = await promisify(execFile)(process.execPath, args, { env, windowsHide: true });
   assert.match(repeated.stdout, /"changed": \[\]/);
-  await assert.rejects(access(join(options.workspace, '.codex')), { code: 'ENOENT' });
-  await assert.rejects(installHooks({ global: true, agent: 'codex' }), /claude-code/);
+});
+
+test('global Codex installer targets user hooks and preserves existing settings', async t => {
+  const options = await fixture(t);
+  const args = [entry, 'install', '--global', '--agent', 'codex', '--bin', binary, '--rules', 'no-useless-comments'];
+  const result = spawnSync(process.execPath, args, { env: { ...process.env, HOME: options.workspace }, encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual((await json(join(options.workspace, '.codex/ai-lint/adapter.json'))).ruleIds, ['no-useless-comments']);
+  assert.equal((await json(join(options.workspace, '.codex/hooks.json'))).hooks.Stop.length, 1);
+  assert.ok(result.stdout.includes('설정 완료'));
 });
 
 test('install CLI supports selecting only Codex', async t => {

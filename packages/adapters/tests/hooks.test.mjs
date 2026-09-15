@@ -207,4 +207,5 @@ test('host config generators include synchronous PostToolUse and Stop commands',
     assert.throws(() => create('/bad$path/cli.js', '/config.json'), /shell/);
   }
   assert.ok(new RegExp(codexHooks('/cli.js', '/config.json').hooks.PostToolUse[0].matcher).test('apply_patch'));
+  assert.equal(new RegExp(codexHooks('/cli.js', '/config.json').hooks.PostToolUse[0].matcher).test('exec_command'), false);
 });

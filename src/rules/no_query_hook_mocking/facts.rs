@@ -20,6 +20,10 @@ impl Hook {
     }
     pub(super) fn is_query(&self) -> bool {
         self.module.as_deref().is_some_and(is_api_module)
+            || (matches!(self.name.as_str(), "useUser" | "useAuthSession")
+                && self.module.as_deref().is_some_and(|source| {
+                    source == "@entities/auth" || source.starts_with("@entities/auth/")
+                }))
             || self.name.starts_with("useSuspense")
             || matches!(
                 self.name.as_str(),

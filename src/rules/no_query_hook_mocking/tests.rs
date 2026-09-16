@@ -104,7 +104,7 @@ fn imported_aliases_spies_and_typed_mock_configuration_are_checked() {
 }
 
 #[test]
-fn msw_ui_auth_and_non_mock_uses_remain_allowed() {
+fn msw_ui_and_unclassified_auth_hooks_remain_allowed() {
     for source in [
         "server.use(http.get('/projects', () => HttpResponse.json([])));",
         "server.use(graphql.query('Projects', () => HttpResponse.json({ data: { projects: [] } })));",
@@ -112,7 +112,7 @@ fn msw_ui_auth_and_non_mock_uses_remain_allowed() {
         "vi.mocked(useQuery); expect(vi.mocked(useQuery)).toHaveBeenCalled();",
         "vi.mocked(useQuery).mockClear(); vi.mocked(useQuery).mockReset();",
         "vi.mock('react-router-dom', () => ({ useNavigate: vi.fn(), useParams: () => ({ id: '1' }) }));",
-        "vi.mock('@entities/auth', () => ({ useUser: vi.fn(() => ({ isInternalUser: true })) }));",
+        "vi.mock('./local-auth', () => ({ useUser: vi.fn(() => ({ isInternalUser: true })) }));",
         "vi.mocked(useUser).mockReturnValue({ currentUser: 'tester' });",
         "vi.spyOn(auth, 'useUser').mockReturnValue({ isSaasUser: true });",
         "vi.spyOn(console, 'error').mockImplementation(() => {});",
@@ -123,6 +123,37 @@ fn msw_ui_auth_and_non_mock_uses_remain_allowed() {
         "vi.mock('./api', () => ({ fetchProjects: vi.fn() }));",
         "vi.mock('@entities/project', () => ({ useProjects: vi.fn(() => { const unrelated = { data: [], isLoading: false }; return []; }) }));",
         "// vi.mock('@tanstack/react-query')\nconst text = 'useQuery.mockReturnValue({})';",
+    ] {
+        assert!(check(source).is_empty(), "{source}");
+    }
+}
+
+#[test]
+fn auth_query_wrappers_are_checked_without_query_shaped_results() {
+    for source in [
+        r#"vi.mock("@entities/auth/@x/message", () => ({
+            useUser: () => ({
+                user: {
+                    email: CURRENT_USER_EMAIL,
+                    role: "user",
+                    permissions: { ...NO_PERMISSIONS, test_editMyChat: true }
+                }
+            })
+        }));"#,
+        "vi.mock('@entities/auth', () => ({ useUser: vi.fn(() => ({ isInternalUser: true })) }));",
+        "vi.mock(import('@entities/auth/@x/message'), () => ({ useUser: () => ({}) }));",
+        "jest.doMock('@entities/auth', () => ({ useAuthSession: () => ({ currentUser: null }) }));",
+        "import { useUser as current } from '@entities/auth'; vi.mocked(current).mockReturnValue({});",
+        "import * as auth from '@entities/auth/@x/message'; vi.spyOn(auth, 'useUser').mockReturnValue({});",
+        "import { useUser } from '@entities/auth/@x/message'; vi.mock('@entities/auth/@x/message');",
+    ] {
+        assert_eq!(check(source).len(), 1, "{source}");
+    }
+    for source in [
+        "vi.mock('@entities/authentication', () => ({ useUser: () => ({ user: {} }) }));",
+        "vi.mock('@entities/auth', () => ({ useLoginDialog: () => ({ open: true }) }));",
+        "vi.mock('@entities/auth/@x/message', async load => { const actual = await load(); return { ...actual, useUser: actual.useUser }; });",
+        "import { useUser } from '@entities/auth'; vi.mocked(useUser);",
     ] {
         assert!(check(source).is_empty(), "{source}");
     }

@@ -70,6 +70,9 @@ AI 요청이나 다른 소스 파일의 탐색 없이 현재 테스트 파일만
 - `Query`·`Queries`·`Mutation`·`Subscription`으로 끝나거나 `useSuspense`로 시작하는 이름,
   `useSWR`·`useSWRInfinite`·`useSWRMutation`·`useMutationState`.
 - mock/import 모듈 경로에 `api` 세그먼트가 있는 hook. 예: `../../api/use-upload-log`.
+- GEBRA의 `@entities/auth` 및 하위 경로(`@x/message` 등)에서 제공하는
+  `useUser`·`useAuthSession`. 실제 구현이 사용자 쿼리를 사용하므로 반환값 형태와 무관하게
+  데이터 hook으로 분류합니다. 같은 이름이어도 다른 모듈 출처는 이 단서에 포함하지 않습니다.
 - mock 반환 객체가 `mutate`, `mutateAsync`, `refetch`, `fetchNextPage`를 가지거나,
   `data`와 `isLoading`/`isPending`/`isError`/`isSuccess`/`error`/`status`/`isFetching`을 함께 가짐.
   예: `useProjects`, `useBilling`처럼 이름에 Query가 없는 wrapper도 검사합니다.
@@ -87,7 +90,7 @@ server.use(http.get('/projects', () => HttpResponse.json([])));
 
 `vi.fn` 없는 일반 함수 대체도 검사합니다. 부분 mock에서 실제 hook을 그대로 보존하는
 `useQuery: actual.useQuery`나, mock 동작을 설정하지 않는 `vi.mocked(useQuery)` 자체는 허용합니다.
-라우팅·인증 상태·일반 UI hook mock은 위 데이터 hook 단서가 없으면 보고하지 않습니다.
+라우팅·일반 UI 및 다른 인증 hook mock은 위 데이터 hook 단서가 없으면 보고하지 않습니다.
 네트워크 API 함수 자체의 mock, store mock 금지는 이 규칙의 범위가 아닙니다.
 
 단서는 파일 내 정적 휴리스틱이며 데이터 hook임을 타입/구현으로 증명하지 않습니다.

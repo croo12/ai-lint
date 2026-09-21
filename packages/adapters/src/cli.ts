@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { parseArgs } from 'node:util';
+import { dirname, join, resolve } from 'node:path';
 import { handleHook, loadHookConfig, HookConfigError } from './hooks.js';
 import { installHooks } from './install.js';
 
@@ -17,6 +18,7 @@ try {
     if (values.help) {
       process.stdout.write('ai-lint-hook install [--agent both|claude-code|codex] [--global (requires --agent claude-code or codex)] [--workspace PATH] [--bin PATH] [--source-root PATH ...] [--rules ID ...] [--env-file FILE] [--timeout-ms 60000] [--hook-timeout 90] [--dry-run]\n');
     } else {
+      // parseArgs types every string option as string; installHooks rejects any other agent.
       const result = await installHooks({ agent: values.agent as 'both' | 'claude-code' | 'codex', workspace: values.workspace,
         global: values.global, binary: values.bin, sourceRoots: values['source-root'], ruleIds: values.rules, envFile: values['env-file'],
         timeoutMs: values['timeout-ms'] ? Number(values['timeout-ms']) : undefined,
@@ -41,7 +43,7 @@ try {
     }
     const payload: unknown = JSON.parse(Buffer.concat(chunks).toString('utf8').replace(/^\uFEFF/, ''));
     phase = 'configuration';
-    const output = await handleHook(await loadHookConfig(values.config), payload);
+    const output = await handleHook(await loadHookConfig(values.config), payload, join(dirname(resolve(values.config)), 'state'));
     process.stdout.write(`${JSON.stringify(output)}\n`);
   }
   }

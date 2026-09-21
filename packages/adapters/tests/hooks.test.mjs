@@ -70,6 +70,26 @@ test('Codex apply_patch and shell events detect untracked and staged edits', asy
   assert.equal(output.decision, 'block');
 });
 
+test('shell events check what the command changed, not the whole source tree', async t => {
+  const config = await fixture(t);
+  const state = join(config.workspace, 'state');
+  const target = join(config.workspace, 'src/file with spaces.tsx');
+  const shell = command => handleHook(config, { hook_event_name: 'PostToolUse', tool_name: 'Bash', cwd: config.workspace, tool_input: { command } }, state);
+  const created = await shell("printf '%s' \"$BAD\" > 'src/file with spaces.tsx'");
+  assert.equal(created.decision, 'block');
+  assert.match(created.reason, /no-set-state-in-effect/);
+  assert.deepEqual(await shell('ls src'), {}); // Nothing changed since the previous event.
+  assert.equal((await handleHook(config, { hook_event_name: 'Stop' }, state)).decision, 'block'); // Stop still checks every change.
+  await writeFile(target, good);
+  assert.deepEqual(await shell("sed -i '' s/x/y/ 'src/file with spaces.tsx'"), {});
+  await writeFile(target, bad);
+  assert.equal((await shell("sed -i '' s/y/x/ 'src/file with spaces.tsx'")).decision, 'block');
+  await writeFile(target, good);
+  assert.deepEqual(await handleHook(config, { hook_event_name: 'PostToolUse', tool_name: 'Edit', cwd: config.workspace,
+    tool_input: { file_path: 'src/file with spaces.tsx' } }, state), {});
+  assert.deepEqual(await shell('ls src'), {}); // A named Write/Edit is not reported again as a shell change.
+});
+
 test('Stop checks scoped Git changes and repeated Stop has explicit loop protection', async t => {
   const config = await fixture(t);
   assert.equal((await handleHook(config, { hook_event_name: 'Stop', stop_hook_active: false })).decision, 'block');

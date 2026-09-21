@@ -46,7 +46,7 @@ npm run hooks:install -- --agent codex --workspace C:/projects/my-app --source-r
 - `.ai-lint/adapter.json`과 선택한 에이전트의 `.claude/settings.json`, `.codex/hooks.json`을 생성·병합합니다.
 - 기존 설정과 다른 hook은 보존합니다. 재실행하면 관리 중인 hook을 중복 없이 갱신합니다.
 - 변경되는 기존 파일은 `.ai-lint/backups/`에 원문 그대로 백업합니다. 필요하면 해당 파일을 원래 경로에 복사해 복구하세요.
-  다른 프로젝트에서도 이 백업 디렉터리를 `.gitignore`에 추가하는 것을 권장합니다.
+  변경 스냅샷은 `.ai-lint/state/`에 쌓이므로 다른 프로젝트에서도 `.ai-lint/`를 `.gitignore`에 추가하는 것을 권장합니다.
 - `--dry-run`을 붙이면 파일을 쓰지 않고 변경 예정 경로만 출력합니다.
 - `--rules ID`과 `--source-root PATH`는 여러 번 지정할 수 있습니다. `--env-file FILE`,
   `--bin PATH`, `--timeout-ms NUMBER`, `--hook-timeout SECONDS`도 지원합니다.
@@ -78,7 +78,8 @@ Codex의 hook 신뢰 승인은 사용자가 직접 해야 하며 설치 명령�
 Linux/macOS에서는 실행 파일의 `.exe`를 빼고 해당 시스템 경로를 사용합니다.
 상대 `workspace`는 설정 파일 위치 기준, 나머지 경로는 workspace 기준입니다.
 `sourceRoots`에는 존재하는 소스 디렉터리나 파일을 지정합니다. 기본값은 `["."]`이며,
-의도적으로 오류가 있는 테스트 fixture는 검사 범위에서 제외하는 것이 좋습니다.
+검사 대상은 이 범위 안에서 바뀐 파일로 다시 좁혀집니다. 의도적으로 오류가 있는 테스트
+fixture를 수정할 일이 있다면 검사 범위에서 제외하는 것이 좋습니다.
 `ruleIds`를 생략하거나 비우면 실행 파일에 포함한 기본 Rust 규칙을 사용합니다.
 
 모델 인증키는 기존 `.env`와 `AI_LINT_MODEL_*` 환경 변수를 사용합니다.
@@ -114,11 +115,16 @@ hook에 대한 신뢰 검토가 필요합니다. lifecycle hooks를 지원하는
   index에 저장된 내용이나 diff의 변경 행만 검사하는 것은 아닙니다.
   변경 파일이 없으면 검사기를 실행하지 않습니다. Git 저장소가 아니면 안내 후
   Stop 검사를 건너뛰고, Git 실행 실패는 오류로 보고합니다.
-- 셸·패치 `PostToolUse` 이벤트는 기존처럼 `sourceRoots`의 JS/TS 파일을 재귀 탐색합니다.
-  Git 저장소가 아니어도 동작하며 이미 커밋한 코드도 검사합니다.
+- 셸·패치 `PostToolUse` 이벤트는 해당 명령이 실제로 바꾼 파일만 검사합니다.
+  직전 이벤트에서 기록한 변경 스냅샷과 현재 Git 변경 파일의 수정 시각·크기를 비교해
+  새로 생기거나 달라진 파일만 대상으로 삼고, 바뀐 파일이 없으면 검사기를 실행하지 않습니다.
+  패치 본문이 파일명을 밝히는 `apply_patch`는 그 파일도 함께 검사합니다.
+  Git 저장소가 아니면 패치 본문이 밝힌 파일 외에는 검사하지 않고 `Stop`에 맡깁니다.
+- 스냅샷은 어댑터 설정 파일 옆 `state/` 디렉터리에 workspace별 JSON 한 개로 보관합니다.
+  스냅샷이 없거나 읽고 쓸 수 없으면 Git 변경 파일 전체를 검사합니다. 검사 범위가 넓어질 뿐
+  검사를 건너뛰지는 않습니다.
 - `node_modules`, `.git`, `target`, `dist`, `build`, `.next`, `coverage`,
-  `test-results`, `playwright-report` 디렉터리는 탐색에서 제외합니다.
-  재귀 탐색은 `.gitignore` 패턴을 해석하지 않으며 디렉터리 심볼릭 링크를 따라가지 않습니다.
+  `test-results`, `playwright-report` 디렉터리의 파일은 모든 이벤트에서 제외합니다.
 - 소스 수정·명령 실행은 수행하지 않으며 원본 파일은 읽기만 합니다.
   지정한 실행 파일을 shell 없이 호출하고 JSON 결과를 검증합니다.
 - 정상 결과는 `{}`, 규칙 위반·문법 오류·검사 실패는
@@ -129,7 +135,7 @@ hook에 대한 신뢰 검토가 필요합니다. lifecycle hooks를 지원하는
 - `stop_hook_active: true`인 반복 Stop에서도 재검사하지만, 위반이 남으면
   `systemMessage`로 알리고 종료 차단은 반복하지 않습니다. 무한 루프를 막기 위한 정책이며,
   위반이 전혀 없는 상태에서만 종료한다는 절대적 보장은 제공하지 않습니다.
-- 실패한 소스 탐색이나 CLI 실행을 정상 검사 결과로 처리하지 않습니다.
+- 실패한 Git 조회나 CLI 실행을 정상 검사 결과로 처리하지 않습니다.
 - 현재 자동 테스트는 실제 CLI와 모의 hook 입력을 검증합니다. 로그인한 Claude Code/Codex
   세션 내부의 hook 실행은 사용자가 등록한 뒤 확인해야 합니다.
 

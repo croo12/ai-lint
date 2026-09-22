@@ -26,10 +26,37 @@ impl Rule for NoDebugger {
 파일을 추가한 뒤 `src/rules/mod.rs`에 모듈, `IDS` 항목, `select` 생성 분기를 등록하세요.
 `ast.rs`는 호출 이름·바인딩·상위 함수·반복문 본문·소스 범위를 다루는 공통 도구입니다.
 바인딩은 Oxc 심볼을 사용해 이름 가려짐과 블록 스코프를 구분합니다.
-파일별 정책은 `context.file_path()`에서 경로를 읽습니다. `Analyzer`는 경로를 전달하며,
-엔진을 직접 사용할 때는 `check_file(program, path)`를 사용하세요.
-기존 `check(program)`은 경로가 없으므로 파일명에 제한된 규칙은 실행하지 않습니다.
 새 규칙에는 정상·위반·스코프 경계 사례의 Rust 테스트를 추가합니다.
+
+## 파일 범위 지정
+
+규칙이 검사할 파일은 `Rule::scope()`로 선언합니다. 엔진이 규칙을 실행하기 전에 거르므로
+규칙 본문에 파일명 조건을 다시 쓰지 않습니다.
+
+| `RuleScope` | 검사 대상 |
+| --- | --- |
+| `AllFiles` (기본값) | 모든 파일 |
+| `TestFiles` | `*.test.ts`, `*.test.tsx` |
+| `NonTestFiles` | 그 외 모든 파일 |
+
+```rust
+use crate::rule::{Rule, RuleContext, RuleScope};
+
+impl Rule for NoDebugger {
+    fn id(&self) -> &'static str { "no-debugger" }
+    fn scope(&self) -> RuleScope { RuleScope::NonTestFiles }
+    fn check(&self, semantic: &Semantic<'_>, context: &mut RuleContext<'_>) { /* ... */ }
+}
+```
+
+테스트 판정은 파일명만 봅니다. `*.browser.test.tsx`처럼 접미사가 일치하면 포함하고,
+`*.spec.ts`·JS 테스트·`__tests__` 디렉터리·`a.test.ts/b.ts`처럼 디렉터리 이름만 일치하는
+경로는 포함하지 않습니다. 접미사를 넓히려면 `src/rule.rs`의 `is_test_file`을 수정합니다.
+
+경로 없이 `check(program)`을 호출하면 테스트 여부를 알 수 없으므로 `TestFiles` 규칙만
+실행하지 않고 나머지는 그대로 실행합니다. `Analyzer`는 항상 경로를 전달하며, 엔진을
+직접 사용할 때는 `check_file(program, path)`를 사용하세요.
+접미사보다 세밀한 파일별 정책이 필요하면 `context.file_path()`에서 경로를 직접 읽습니다.
 
 ```sh
 cargo test --locked --offline
@@ -50,10 +77,63 @@ Rust 호출부는 `RuleEngine::new(vec![Box::new(MyRule)])` 또는 `rules::selec
 default export, namespace import는 허용합니다. 실제 외부 사용 여부는
 프로젝트 간 참조 분석을 수행하지 않으므로 이 규칙만으로 증명하지 않습니다.
 
+## 금지된 React 호출
+
+`no-create-context`와 `no-forward-ref`는 `ast::calls_imported`를 공유하는 AST 전용
+규칙입니다. 호출식만 검사하며 import 선언 자체나 타입 참조는 보고하지 않습니다.
+같은 판정으로 다음 세 형태를 잡습니다.
+
+- `name(...)` — import 여부와 무관한 이름 호출.
+- `React.name(...)` — default import, `import * as React`, 그 밖의 `<객체>.name(...)` 멤버 호출.
+- `import { name as alias } from 'react'`처럼 **이름을 바꾼 import**.
+  식별자를 선언까지 되짚어 원래 import 이름으로 판정합니다.
+
+### createContext 직접 사용 금지
+
+`no-create-context`는 `createContext` 호출을 금지하고 프로젝트의 `createSafeContext`를
+쓰도록 안내합니다.
+
+```ts
+// 위반
+const ThemeContext = createContext<Theme | null>(null);
+
+// 허용
+const ThemeContext = createSafeContext<Theme>();
+```
+
+`createSafeContext` 구현부는 스스로 `createContext`를 호출해야 하므로 예외로 둡니다.
+호출을 감싸는 상위 선언 이름이 `createSafeContext`이면 보고하지 않으며,
+`function createSafeContext()`와 `const createSafeContext = () => ...` 두 형태를 인식합니다.
+
+### forwardRef 사용 금지
+
+`no-forward-ref`는 React 19에서 함수 컴포넌트가 `ref`를 일반 prop으로 받을 수 있게 되어
+`forwardRef`가 deprecated된 것을 근거로 호출을 금지합니다. 예외는 없습니다.
+
+```tsx
+// 위반
+const Input = forwardRef<HTMLInputElement, Props>((props, ref) => <input ref={ref} />);
+
+// 허용
+function Input({ ref, ...props }: Props) {
+  return <input ref={ref} {...props} />;
+}
+```
+
+`ForwardRefExoticComponent`·`ForwardedRef` 같은 타입 참조와 이미 작성된 `ref` prop의
+타입 정합성은 검사하지 않습니다. 이는 TypeScript와 React 버전이 판단할 문제입니다.
+
+### 공통 한계
+
+이름 단서만 사용하므로 무관한 객체의 동명 메서드(`store.createContext()`)도 보고할 수
+있고, 반대로 동적으로 계산한 이름이나 다른 모듈이 재수출한 별칭은 놓칠 수 있습니다.
+`createSafeContext`의 존재 여부나 시그니처, 설치된 React 버전은 검증하지 않습니다.
+
 ## 데이터 요청 hook mock 금지
 
-`no-query-hook-mocking`은 `*.test.ts`와 `*.test.tsx`에만 적용하는 AST 전용 규칙입니다.
-`*.browser.test.tsx`도 포함하고, 일반 소스·`*.spec.ts`·JS 테스트에는 적용하지 않습니다.
+`no-query-hook-mocking`은 `RuleScope::TestFiles`를 선언한 AST 전용 규칙으로
+`*.test.ts`와 `*.test.tsx`에만 적용합니다. `*.browser.test.tsx`도 포함하고,
+일반 소스·`*.spec.ts`·JS 테스트에는 적용하지 않습니다.
 AI 요청이나 다른 소스 파일의 탐색 없이 현재 테스트 파일만 분석합니다.
 
 탐지하는 mock:

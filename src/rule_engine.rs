@@ -45,6 +45,9 @@ impl RuleEngine {
             return Err(format!("semantic analysis failed: {:?}", built.diagnostics));
         }
         for rule in &self.rules {
+            if !rule.scope().includes(path) {
+                continue;
+            }
             let mut context = RuleContext::new(
                 rule.id(),
                 path,

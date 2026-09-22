@@ -3,7 +3,7 @@ mod facts;
 #[cfg(test)]
 mod tests;
 
-use crate::rule::{Rule, RuleContext};
+use crate::rule::{Rule, RuleContext, RuleScope};
 use facts::{Facts, Hook, argument, is_query_library, member, module_hook_name};
 use oxc_ast::{AstKind, ast::CallExpression};
 use oxc_semantic::Semantic;
@@ -15,16 +15,11 @@ impl Rule for NoQueryHookMocking {
         "no-query-hook-mocking"
     }
 
-    fn check(&self, semantic: &Semantic<'_>, context: &mut RuleContext<'_>) {
-        let is_test = context
-            .file_path()
-            .and_then(|p| p.file_name())
-            .and_then(|p| p.to_str())
-            .is_some_and(|name| name.ends_with(".test.ts") || name.ends_with(".test.tsx"));
-        if !is_test {
-            return;
-        }
+    fn scope(&self) -> RuleScope {
+        RuleScope::TestFiles
+    }
 
+    fn check(&self, semantic: &Semantic<'_>, context: &mut RuleContext<'_>) {
         let facts = Facts::new(semantic);
         for node in semantic.nodes().iter() {
             let AstKind::CallExpression(call) = node.kind() else {

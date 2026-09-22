@@ -2,8 +2,10 @@ use super::*;
 use crate::{
     analyzer::{AnalyzeError, Analyzer},
     model::{Decision, ModelClient, ModelError, ModelJudgment, ModelRequest},
-    rule::RuleViolation,
+    rule::{RuleContext, RuleScope, RuleViolation},
 };
+use oxc_semantic::Semantic;
+use oxc_span::Span;
 struct Stub;
 impl ModelClient for Stub {
     fn judge(&self, _: &ModelRequest) -> Result<ModelJudgment, ModelError> {
@@ -23,6 +25,89 @@ fn check(id: &str, source: &str) -> Vec<RuleViolation> {
     );
     result.rule_violations
 }
+struct ScopedStub(RuleScope);
+impl Rule for ScopedStub {
+    fn id(&self) -> &'static str {
+        "stub-scope"
+    }
+    fn scope(&self) -> RuleScope {
+        self.0
+    }
+    fn check(&self, _: &Semantic<'_>, context: &mut RuleContext<'_>) {
+        context.report(Span::new(0, 0), "stub");
+    }
+}
+
+#[test]
+fn the_engine_runs_a_rule_only_inside_its_scope() {
+    for (scope, path, expected) in [
+        (RuleScope::AllFiles, "sample.ts", 1),
+        (RuleScope::AllFiles, "sample.test.ts", 1),
+        (RuleScope::TestFiles, "sample.ts", 0),
+        (RuleScope::TestFiles, "sample.test.ts", 1),
+        (RuleScope::TestFiles, "sample.test.tsx", 1),
+        (RuleScope::NonTestFiles, "sample.ts", 1),
+        (RuleScope::NonTestFiles, "sample.test.ts", 0),
+        (RuleScope::NonTestFiles, "sample.test.tsx", 0),
+    ] {
+        let engine = RuleEngine::new(vec![Box::new(ScopedStub(scope))]);
+        let result = Analyzer::analyze_source_with_rules(path, "const x = 1;", &engine).unwrap();
+        assert_eq!(result.rule_violations.len(), expected, "{scope:?} {path}");
+    }
+}
+
+#[test]
+fn create_context_is_rejected_in_every_call_form() {
+    for source in [
+        "import { createContext } from 'react'; const C = createContext(null);",
+        "import React from 'react'; const C = React.createContext(null);",
+        "import * as React from 'react'; const C = React.createContext<Value | null>(null);",
+        "import { createContext as make } from 'react'; const C = make(null);",
+        "const C = createContext<Value | null>(null);",
+        "function useThing() { return createContext(null); }",
+    ] {
+        assert_eq!(check("no-create-context", source).len(), 1, "{source}");
+    }
+}
+
+#[test]
+fn the_safe_context_factory_and_unrelated_calls_stay_allowed() {
+    for source in [
+        "import { createSafeContext } from '@shared/lib'; const C = createSafeContext(null);",
+        "export function createSafeContext<T>() { return createContext<T | null>(null); }",
+        "export const createSafeContext = <T,>() => createContext<T | null>(null);",
+        "const C = createContextMenu(null);",
+        "const C = context.create(null);",
+    ] {
+        assert!(check("no-create-context", source).is_empty(), "{source}");
+    }
+}
+
+#[test]
+fn forward_ref_is_rejected_in_every_call_form() {
+    for source in [
+        "import { forwardRef } from 'react'; const Input = forwardRef((props, ref) => null);",
+        "import React from 'react'; const Input = React.forwardRef((props, ref) => null);",
+        "import * as React from 'react'; const Input = React.forwardRef<HTMLInputElement, Props>((props, ref) => null);",
+        "import { forwardRef as fr } from 'react'; const Input = fr((props, ref) => null);",
+        "export default forwardRef(function Input(props, ref) { return null; });",
+    ] {
+        assert_eq!(check("no-forward-ref", source).len(), 1, "{source}");
+    }
+}
+
+#[test]
+fn a_ref_prop_and_unrelated_names_stay_allowed() {
+    for source in [
+        "function Input({ ref, ...rest }: Props) { return null; }",
+        "const Input = ({ ref }: Props) => null;",
+        "const x = forwardRefs(list);",
+        "const x = ref.forward(value);",
+    ] {
+        assert!(check("no-forward-ref", source).is_empty(), "{source}");
+    }
+}
+
 #[test]
 fn collection_rule_matches_loop_forms_and_function_forms_once() {
     for body in [

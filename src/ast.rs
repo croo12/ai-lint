@@ -15,6 +15,34 @@ pub fn callee_name(expression: &Expression<'_>) -> Option<String> {
     }
 }
 
+/// True when the callee is `name`, `<object>.name`, or a binding renamed from an import of `name`.
+pub fn calls_imported(semantic: &Semantic<'_>, callee: &Expression<'_>, name: &str) -> bool {
+    callee_name(callee).is_some_and(|called| {
+        called == name
+            || called
+                .strip_suffix(name)
+                .is_some_and(|object| object.ends_with('.'))
+    }) || imported_name(semantic, callee).is_some_and(|imported| imported == name)
+}
+
+/// The name a binding was imported under, before any local rename.
+pub fn imported_name(semantic: &Semantic<'_>, expression: &Expression<'_>) -> Option<String> {
+    let Expression::Identifier(id) = expression.get_inner_expression() else {
+        return None;
+    };
+    let symbol = semantic
+        .scoping()
+        .get_reference(id.reference_id.get()?)
+        .symbol_id()?;
+    match semantic
+        .nodes()
+        .kind(semantic.scoping().symbol_declaration(symbol))
+    {
+        AstKind::ImportSpecifier(import) => Some(import.imported.name().to_string()),
+        _ => None,
+    }
+}
+
 pub fn reference_symbol(semantic: &Semantic<'_>, expression: &Expression<'_>) -> Option<usize> {
     let Expression::Identifier(id) = expression.get_inner_expression() else {
         return None;

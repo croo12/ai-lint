@@ -109,14 +109,20 @@ cargo run -- check --rules no-alert --rules no-console-log src/App.tsx
 
 규칙 ID: `no-set-state-in-effect`, `no-console-log`, `no-alert`,
 `contextual-effect`, `prefer-functional-transforms`, `no-wildcard-export`,
-`no-query-hook-mocking`, `no-useless-comments`.
+`no-query-hook-mocking`, `no-useless-comments`, `no-unsafe-type-assertions`,
+`no-create-context`, `no-forward-ref`.
 `--rules`를 생략하면 기본 effect 규칙만 실행합니다.
+규칙마다 `Rule::scope()`로 검사 대상 파일을 `AllFiles`·`TestFiles`·`NonTestFiles` 중에서
+선언합니다. [파일 범위 지정](docs/rust-rules.md#파일-범위-지정)을 참고하세요.
 `contextual-effect`와 `prefer-functional-transforms`는 후보에 대해서만 AI 판단을 요청합니다.
 `no-wildcard-export`는 `export *` 대신 필요한 이름을 명시하도록 검사하는 AST 규칙입니다.
 `no-query-hook-mocking`은 `*.test.ts`/`*.test.tsx`에서 데이터 요청 hook을 직접 mock하면
 MSW 사용을 안내합니다. [탐지 범위와 예외](docs/rust-rules.md#데이터-요청-hook-mock-금지)를 참고하세요.
 `no-useless-comments`는 일반 문서 링크, 코드 동작 설명, ADR에 기록해야 할 의사결정 주석을
 검사하며, 설명이 있는 `TODO`는 허용합니다.
+`no-create-context`는 `createContext` 직접 호출을 금지하고 `createSafeContext` 사용을,
+`no-forward-ref`는 deprecated된 `forwardRef` 대신 `ref` prop 사용을 안내합니다.
+[탐지 범위와 예외](docs/rust-rules.md#금지된-react-호출)를 참고하세요.
 
 YAML 규칙 엔진은 제거했습니다. 기존 `--rules FILE.yaml`은 `--rules ID`로,
 hook의 `ruleFiles`는 `ruleIds`로 전환해야 합니다.

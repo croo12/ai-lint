@@ -109,6 +109,37 @@ fn a_ref_prop_and_unrelated_names_stay_allowed() {
 }
 
 #[test]
+fn react_calls_are_resolved_through_local_aliases() {
+    for source in [
+        "import { forwardRef } from 'react'; const fr = forwardRef; const A = fr((p, r) => null);",
+        "import * as React from 'react'; const { forwardRef } = React; const A = forwardRef((p, r) => null);",
+        "import React from 'react'; const { forwardRef: fr } = React; const A = fr((p, r) => null);",
+        "import { forwardRef as a } from 'react'; const b = a; const c = b; const A = c((p, r) => null);",
+    ] {
+        assert_eq!(check("no-forward-ref", source).len(), 1, "{source}");
+    }
+}
+
+#[test]
+fn a_binding_that_is_not_reacts_export_is_not_reported() {
+    for source in [
+        "import { forwardRef } from '@shared/table'; const A = forwardRef(column);",
+        "import table from '@shared/table'; const A = table.forwardRef(column);",
+        "function forwardRef(node) { return node; } const A = forwardRef(value);",
+        "const store = makeStore(); const A = store.forwardRef(value);",
+        "import { createContext } from 'vm'; const A = createContext({});",
+        "import vm from 'vm'; const A = vm.createContext({});",
+    ] {
+        let rule = if source.contains("createContext") {
+            "no-create-context"
+        } else {
+            "no-forward-ref"
+        };
+        assert!(check(rule, source).is_empty(), "{source}");
+    }
+}
+
+#[test]
 fn collection_rule_matches_loop_forms_and_function_forms_once() {
     for body in [
         "for (const x of xs) { out.push(x); out.push(x + 1); }",

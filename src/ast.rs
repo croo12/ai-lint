@@ -1,6 +1,9 @@
 //! Shared typed AST helpers; rule policies live in `rules`.
-use oxc_ast::{AstKind, ast::Expression};
-use oxc_semantic::{AstNode, Semantic};
+use oxc_ast::{
+    AstKind,
+    ast::{BindingPattern, Expression, VariableDeclarator},
+};
+use oxc_semantic::{AstNode, NodeId, Semantic};
 use oxc_span::{GetSpan, Span};
 
 pub fn callee_name(expression: &Expression<'_>) -> Option<String> {
@@ -15,18 +18,87 @@ pub fn callee_name(expression: &Expression<'_>) -> Option<String> {
     }
 }
 
-/// True when the callee is `name`, `<object>.name`, or a binding renamed from an import of `name`.
-pub fn calls_imported(semantic: &Semantic<'_>, callee: &Expression<'_>, name: &str) -> bool {
-    callee_name(callee).is_some_and(|called| {
-        called == name
-            || called
-                .strip_suffix(name)
-                .is_some_and(|object| object.ends_with('.'))
-    }) || imported_name(semantic, callee).is_some_and(|imported| imported == name)
+/// How a local binding entered the file from another module.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Import {
+    /// `import { name as local } from "module"`.
+    Named { module: String, name: String },
+    /// `import local from "module"` or `import * as local from "module"`.
+    Whole { module: String },
 }
 
-/// The name a binding was imported under, before any local rename.
-pub fn imported_name(semantic: &Semantic<'_>, expression: &Expression<'_>) -> Option<String> {
+/// Local aliases are followed one binding at a time; the cap stops a reference cycle.
+const ALIAS_DEPTH: u8 = 12;
+
+/// Resolves an identifier to the module export it denotes, through local aliases.
+pub fn resolve_import(semantic: &Semantic<'_>, expression: &Expression<'_>) -> Option<Import> {
+    resolve_alias(semantic, expression, 0)
+}
+
+fn resolve_alias(
+    semantic: &Semantic<'_>,
+    expression: &Expression<'_>,
+    depth: u8,
+) -> Option<Import> {
+    if depth > ALIAS_DEPTH {
+        return None;
+    }
+    let Expression::Identifier(id) = expression.get_inner_expression() else {
+        return None;
+    };
+    let declaration = declaration_node(semantic, expression)?;
+    let module = || {
+        semantic
+            .nodes()
+            .ancestor_kinds(declaration)
+            .find_map(|kind| match kind {
+                AstKind::ImportDeclaration(import) => Some(import.source.value.to_string()),
+                _ => None,
+            })
+    };
+    match semantic.nodes().kind(declaration) {
+        AstKind::ImportSpecifier(import) => Some(Import::Named {
+            module: module()?,
+            name: import.imported.name().to_string(),
+        }),
+        AstKind::ImportDefaultSpecifier(_) | AstKind::ImportNamespaceSpecifier(_) => {
+            Some(Import::Whole { module: module()? })
+        }
+        AstKind::VariableDeclarator(declarator) => {
+            resolve_binding(semantic, declarator, &id.name, depth)
+        }
+        _ => None,
+    }
+}
+
+/// `const local = imported` and `const { name } = namespace` keep the original export.
+fn resolve_binding(
+    semantic: &Semantic<'_>,
+    declarator: &VariableDeclarator<'_>,
+    local: &str,
+    depth: u8,
+) -> Option<Import> {
+    let init = declarator.init.as_ref()?;
+    match &declarator.id {
+        BindingPattern::BindingIdentifier(_) => resolve_alias(semantic, init, depth + 1),
+        BindingPattern::ObjectPattern(pattern) => {
+            let name = pattern.properties.iter().find_map(|property| {
+                let binding = property.value.get_binding_identifier()?;
+                if binding.name != local {
+                    return None;
+                }
+                Some(property.key.static_name()?.into_owned())
+            })?;
+            match resolve_alias(semantic, init, depth + 1)? {
+                Import::Whole { module } => Some(Import::Named { module, name }),
+                Import::Named { .. } => None,
+            }
+        }
+        _ => None,
+    }
+}
+
+fn declaration_node(semantic: &Semantic<'_>, expression: &Expression<'_>) -> Option<NodeId> {
     let Expression::Identifier(id) = expression.get_inner_expression() else {
         return None;
     };
@@ -34,12 +106,36 @@ pub fn imported_name(semantic: &Semantic<'_>, expression: &Expression<'_>) -> Op
         .scoping()
         .get_reference(id.reference_id.get()?)
         .symbol_id()?;
-    match semantic
-        .nodes()
-        .kind(semantic.scoping().symbol_declaration(symbol))
-    {
-        AstKind::ImportSpecifier(import) => Some(import.imported.name().to_string()),
-        _ => None,
+    Some(semantic.scoping().symbol_declaration(symbol))
+}
+
+/// True when the callee is `name` as exported by `module`: a named import under any local
+/// name, `<binding>.name` on a default or namespace import of `module`, or a local alias of
+/// either. An identifier that resolves to no declaration at all falls back to a name match,
+/// so a pasted fragment without its imports still reports.
+pub fn calls_module_export(
+    semantic: &Semantic<'_>,
+    callee: &Expression<'_>,
+    module: &str,
+    name: &str,
+) -> bool {
+    match callee.get_inner_expression() {
+        Expression::StaticMemberExpression(member) => {
+            member.property.name == name
+                && matches!(
+                    resolve_import(semantic, &member.object),
+                    Some(Import::Whole { module: source }) if source == module
+                )
+        }
+        Expression::Identifier(id) => match resolve_import(semantic, callee) {
+            Some(Import::Named {
+                module: source,
+                name: exported,
+            }) => source == module && exported == name,
+            Some(Import::Whole { .. }) => false,
+            None => id.name == name && declaration_node(semantic, callee).is_none(),
+        },
+        _ => false,
     }
 }
 

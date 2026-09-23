@@ -1,6 +1,6 @@
 //! React 19 passes `ref` as an ordinary prop, so `forwardRef` is no longer needed.
 use crate::{
-    ast::calls_imported,
+    ast::calls_module_export,
     rule::{Rule, RuleContext},
 };
 use oxc_ast::AstKind;
@@ -18,7 +18,7 @@ impl Rule for NoForwardRef {
     fn check(&self, semantic: &Semantic<'_>, context: &mut RuleContext<'_>) {
         for node in semantic.nodes().iter() {
             if let AstKind::CallExpression(call) = node.kind()
-                && calls_imported(semantic, &call.callee, "forwardRef")
+                && calls_module_export(semantic, &call.callee, "react", "forwardRef")
             {
                 context.report(call.span, MESSAGE);
             }

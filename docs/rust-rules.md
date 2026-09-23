@@ -79,14 +79,23 @@ default export, namespace import는 허용합니다. 실제 외부 사용 여부
 
 ## 금지된 React 호출
 
-`no-create-context`와 `no-forward-ref`는 `ast::calls_imported`를 공유하는 AST 전용
+`no-create-context`와 `no-forward-ref`는 `ast::calls_module_export`를 공유하는 AST 전용
 규칙입니다. 호출식만 검사하며 import 선언 자체나 타입 참조는 보고하지 않습니다.
-같은 판정으로 다음 세 형태를 잡습니다.
 
-- `name(...)` — import 여부와 무관한 이름 호출.
-- `React.name(...)` — default import, `import * as React`, 그 밖의 `<객체>.name(...)` 멤버 호출.
-- `import { name as alias } from 'react'`처럼 **이름을 바꾼 import**.
-  식별자를 선언까지 되짚어 원래 import 이름으로 판정합니다.
+판정은 이름 비교가 아니라 **바인딩 해석**입니다. 식별자를 `reference_id` → `symbol_id` →
+선언 노드로 되짚어, 그 바인딩이 실제로 `react`의 해당 export인지 확인합니다.
+
+- `ImportSpecifier` → 원래 export 이름과 모듈로 판정. `import { name as alias }`의 별칭도 잡습니다.
+- `ImportDefaultSpecifier`·`ImportNamespaceSpecifier` → 모듈 전체 바인딩.
+  `React.name(...)` 멤버 호출은 `React`가 이 둘 중 하나로 해석될 때만 보고합니다.
+- `VariableDeclarator` → 초기화식을 따라 재귀합니다. `const alias = name`,
+  `const { name } = React`, `const { name: alias } = React`를 모두 원래 export로 되돌립니다.
+  순환을 막기 위해 12단계에서 멈춥니다.
+- 선언을 찾을 수 없는 식별자만 이름으로 판정합니다. import 없이 붙여넣은 조각을
+  웹 플레이그라운드에서 검사할 수 있게 하기 위한 예외입니다.
+
+따라서 같은 이름이어도 다른 모듈의 export(`import { forwardRef } from '@shared/table'`),
+무관한 객체의 메서드(`store.createContext()`), 지역 함수는 보고하지 않습니다.
 
 ### createContext 직접 사용 금지
 
@@ -125,9 +134,10 @@ function Input({ ref, ...props }: Props) {
 
 ### 공통 한계
 
-이름 단서만 사용하므로 무관한 객체의 동명 메서드(`store.createContext()`)도 보고할 수
-있고, 반대로 동적으로 계산한 이름이나 다른 모듈이 재수출한 별칭은 놓칠 수 있습니다.
-`createSafeContext`의 존재 여부나 시그니처, 설치된 React 버전은 검증하지 않습니다.
+모듈 이름은 `react`와 정확히 일치해야 합니다. `preact/compat`이나 사내 재수출 모듈도
+막으려면 허용 모듈 목록으로 확장해야 합니다. `require('react').forwardRef()` 같은 CJS
+접근은 심볼로 해석되지 않아 놓칩니다. `createSafeContext`의 존재 여부나 시그니처,
+설치된 React 버전은 검증하지 않습니다.
 
 ## 데이터 요청 hook mock 금지
 

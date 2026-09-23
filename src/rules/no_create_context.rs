@@ -1,6 +1,6 @@
 //! Route every React context through the project's createSafeContext factory.
 use crate::{
-    ast::calls_imported,
+    ast::calls_module_export,
     rule::{Rule, RuleContext},
 };
 use oxc_ast::AstKind;
@@ -18,7 +18,7 @@ impl Rule for NoCreateContext {
     fn check(&self, semantic: &Semantic<'_>, context: &mut RuleContext<'_>) {
         for node in semantic.nodes().iter() {
             if let AstKind::CallExpression(call) = node.kind()
-                && calls_imported(semantic, &call.callee, "createContext")
+                && calls_module_export(semantic, &call.callee, "react", "createContext")
                 && !inside_safe_context_factory(semantic, node)
             {
                 context.report(call.span, MESSAGE);

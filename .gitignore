@@ -8,3 +8,4 @@ apps/*/test-results/
 apps/*/playwright-report/
 packages/*/dist/
 .ai-lint/
+.claude/settings.local.json

@@ -8,6 +8,7 @@ fn cli() -> Command {
         "AI_LINT_MODEL_API_KEY",
         "AI_LINT_MODEL_TIMEOUT_SECS",
         "AI_LINT_MODEL_JSON_MODE",
+        "AI_LINT_MODEL_RESPONSE_FORMAT",
     ] {
         command.env_remove(name);
     }
@@ -63,6 +64,7 @@ fn env_file_loads_and_environment_overrides_it_without_model_calls_for_static_ru
             "AI_LINT_MODEL_API_KEY",
             "AI_LINT_MODEL_TIMEOUT_SECS",
             "AI_LINT_MODEL_JSON_MODE",
+            "AI_LINT_MODEL_RESPONSE_FORMAT",
         ] {
             command.env_remove(key);
         }

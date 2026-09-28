@@ -135,24 +135,33 @@ hook의 `ruleFiles`는 `ruleIds`로 전환해야 합니다.
 
 ```dotenv
 AI_LINT_MODEL_BASE_URL=https://your-server.example/v1
-AI_LINT_MODEL_NAME=your-model
+AI_LINT_MODEL_NAME=Qwen/Qwen3.6-35B-A3B
 AI_LINT_MODEL_API_KEY=your-key
 AI_LINT_MODEL_TIMEOUT_SECS=30
-AI_LINT_MODEL_JSON_MODE=false
+AI_LINT_MODEL_RESPONSE_FORMAT=json_schema
 ```
 
 - URL은 API 기본 경로입니다. `/chat/completions`를 자동으로 덧붙입니다.
   프록시 경로도 보존합니다. 예: `/proxy/v1` → `/proxy/v1/chat/completions`.
 - 인증이 없는 서버라면 인증키를 비워둘 수 있습니다.
+- 모델명은 서버에 등록한 ID 또는 별칭을 사용합니다.
 - 실행 디렉터리의 `.env`를 읽으며, 프로세스 환경 변수가 파일 값보다 우선합니다.
   부모 디렉터리의 `.env`는 자동 탐색하지 않습니다.
 - 다른 파일은 `cargo run -- check --env-file config.env src/App.tsx`로 지정합니다.
 - 파일이 없거나 URL·모델명·키가 모두 비어 있으면 모델을 설정하지 않습니다.
   일부 값만 채웠거나 값이 잘못되었다면 설정 오류로 종료합니다.
 - 시간 제한은 요청당 1~3600초이며 기본값은 30초입니다.
-- 서버가 `response_format: {"type":"json_object"}`를 지원할 때만
-  `AI_LINT_MODEL_JSON_MODE=true`로 설정합니다. 기본값은 호환성을 위해 `false`이며,
-  이 경우에도 프롬프트로 JSON을 요청하고 반환값을 엄격히 검증합니다.
+- `AI_LINT_MODEL_RESPONSE_FORMAT`은 기본값 `json_schema`로,
+  `response_format.type=json_schema`와 `strict=true`를 전송합니다.
+  스키마는 `decision`의 세 가지 값, 필수 `reason` 문자열(`minLength: 1`), 추가 필드 금지를 정의합니다.
+  모델을 제공하는 추론 서버가 JSON Schema 제약 생성을 지원해야 합니다.
+- 호환 모드는 `json_object`(JSON 객체만 강제) 또는 `text`(`response_format` 생략)로
+  명시할 수 있습니다. 서버가 스키마 요청을 거부해도 자동으로 제약을 낮춰 재시도하지 않습니다.
+- 기존 `AI_LINT_MODEL_JSON_MODE=true/false`는 새 설정이 없을 때 각각
+  `json_object`/`text`로 동작합니다. 기존 `.env`에는
+  `AI_LINT_MODEL_RESPONSE_FORMAT=json_schema`를 추가하면 스키마 모드가 우선합니다.
+- 모든 모드에서 반환값을 엄격히 검증하며 공백뿐인 `reason`도 거부합니다.
+  스키마 제약은 출력 형식을 제한하며 판단의 정확성을 보장하지는 않습니다.
 
 클라이언트는 [OpenAI Chat Completions 형식](https://developers.openai.com/api/reference/resources/chat)의
 비스트리밍 요청과 `choices[0].message.content` 응답을 사용합니다.

@@ -35,7 +35,14 @@ pub struct ModelConfig {
     model: String,
     api_key: Option<String>,
     timeout: Duration,
-    json_mode: bool,
+    response_format: ResponseFormat,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ResponseFormat {
+    JsonSchema,
+    JsonObject,
+    Text,
 }
 
 impl ModelConfig {
@@ -93,20 +100,25 @@ impl ModelConfig {
             .ok()
             .filter(|v| (1..=3600).contains(v))
             .ok_or(ModelError::Config("AI_LINT_MODEL_TIMEOUT_SECS"))?;
-        let json_mode = match value("AI_LINT_MODEL_JSON_MODE")
-            .as_deref()
-            .unwrap_or("false")
-        {
-            "true" => true,
-            "false" => false,
-            _ => return Err(ModelError::Config("AI_LINT_MODEL_JSON_MODE")),
+        let response_format = match value("AI_LINT_MODEL_RESPONSE_FORMAT").as_deref() {
+            Some("json_schema") => ResponseFormat::JsonSchema,
+            Some("json_object") => ResponseFormat::JsonObject,
+            Some("text") => ResponseFormat::Text,
+            Some(_) => return Err(ModelError::Config("AI_LINT_MODEL_RESPONSE_FORMAT")),
+            // Preserve explicit legacy settings; new configurations use a schema.
+            None => match value("AI_LINT_MODEL_JSON_MODE").as_deref() {
+                Some("true") => ResponseFormat::JsonObject,
+                Some("false") => ResponseFormat::Text,
+                None => ResponseFormat::JsonSchema,
+                Some(_) => return Err(ModelError::Config("AI_LINT_MODEL_JSON_MODE")),
+            },
         };
         Ok(Some(Self {
             endpoint,
             model,
             api_key,
             timeout: Duration::from_secs(seconds),
-            json_mode,
+            response_format,
         }))
     }
 }
@@ -166,8 +178,32 @@ impl ModelClient for OpenAiCompatibleClient {
                 {"role": "user", "content": json!({"rule_id": request.rule_id, "criteria": request.criteria, "source": request.source}).to_string()}
             ]
         });
-        if self.config.json_mode {
-            body["response_format"] = json!({"type": "json_object"});
+        match self.config.response_format {
+            ResponseFormat::JsonSchema => {
+                body["response_format"] = json!({
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": "lint_judgment",
+                        "strict": true,
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "decision": {
+                                    "type": "string",
+                                    "enum": ["violation", "pass", "unknown"]
+                                },
+                                "reason": {"type": "string", "minLength": 1}
+                            },
+                            "required": ["decision", "reason"],
+                            "additionalProperties": false
+                        }
+                    }
+                });
+            }
+            ResponseFormat::JsonObject => {
+                body["response_format"] = json!({"type": "json_object"});
+            }
+            ResponseFormat::Text => {}
         }
         let mut builder = self.http.post(self.config.endpoint.clone()).json(&body);
         if let Some(key) = &self.config.api_key {
@@ -362,6 +398,7 @@ mod tests {
             ("AI_LINT_MODEL_TIMEOUT_SECS", "0"),
             ("AI_LINT_MODEL_TIMEOUT_SECS", "bad"),
             ("AI_LINT_MODEL_JSON_MODE", "maybe"),
+            ("AI_LINT_MODEL_RESPONSE_FORMAT", "unsupported"),
         ] {
             assert!(
                 ModelConfig::from_lookup(|key| match key {
@@ -376,6 +413,33 @@ mod tests {
     }
 
     #[test]
+    fn response_format_defaults_and_legacy_settings() {
+        for (format, legacy, expected) in [
+            (None, None, ResponseFormat::JsonSchema),
+            (None, Some("true"), ResponseFormat::JsonObject),
+            (None, Some("false"), ResponseFormat::Text),
+            (
+                Some("json_schema"),
+                Some("false"),
+                ResponseFormat::JsonSchema,
+            ),
+            (Some("json_object"), None, ResponseFormat::JsonObject),
+            (Some("text"), Some("true"), ResponseFormat::Text),
+        ] {
+            let settings = ModelConfig::from_lookup(|key| match key {
+                "AI_LINT_MODEL_BASE_URL" => Some("https://example.invalid/v1".into()),
+                "AI_LINT_MODEL_NAME" => Some("test-model".into()),
+                "AI_LINT_MODEL_RESPONSE_FORMAT" => format.map(str::to_owned),
+                "AI_LINT_MODEL_JSON_MODE" => legacy.map(str::to_owned),
+                _ => None,
+            })
+            .unwrap()
+            .unwrap();
+            assert_eq!(settings.response_format, expected);
+        }
+    }
+
+    #[test]
     fn sends_compatible_request_and_parses_decisions() {
         for decision in ["violation", "pass", "unknown"] {
             let (url, server) = mock_server(
@@ -386,9 +450,7 @@ mod tests {
                 ),
                 Duration::ZERO,
             );
-            let mut settings = config(&url);
-            settings.json_mode = true;
-            let client = OpenAiCompatibleClient::new(settings).unwrap();
+            let client = OpenAiCompatibleClient::new(config(&url)).unwrap();
             let judgment = client.judge(&request()).unwrap();
             assert_eq!(serde_json::to_value(judgment.decision).unwrap(), decision);
             assert_eq!(judgment.reason, "설명");
@@ -401,12 +463,44 @@ mod tests {
             );
             assert_eq!(body["model"], "test-model");
             assert_eq!(body["stream"], false);
-            assert_eq!(body["response_format"]["type"], "json_object");
+            assert_eq!(body["response_format"]["type"], "json_schema");
+            let format = &body["response_format"]["json_schema"];
+            assert_eq!(format["name"], "lint_judgment");
+            assert_eq!(format["strict"], true);
+            let schema = &format["schema"];
+            assert_eq!(schema["type"], "object");
+            assert_eq!(schema["additionalProperties"], false);
+            assert_eq!(schema["required"], json!(["decision", "reason"]));
+            assert_eq!(
+                schema["properties"]["decision"],
+                json!({"type": "string", "enum": ["violation", "pass", "unknown"]})
+            );
+            assert_eq!(
+                schema["properties"]["reason"],
+                json!({"type": "string", "minLength": 1})
+            );
             let payload: serde_json::Value =
                 serde_json::from_str(body["messages"][1]["content"].as_str().unwrap()).unwrap();
             assert_eq!(payload["source"], "code");
             assert_eq!(payload["criteria"], "Check the code");
         }
+    }
+
+    #[test]
+    fn supports_legacy_json_object_requests() {
+        let (url, server) = mock_server(
+            200,
+            response(r#"{"decision":"pass","reason":"ok"}"#, "stop"),
+            Duration::ZERO,
+        );
+        let mut settings = config(&url);
+        settings.response_format = ResponseFormat::JsonObject;
+        OpenAiCompatibleClient::new(settings)
+            .unwrap()
+            .judge(&request())
+            .unwrap();
+        let (_, body) = server.join().unwrap();
+        assert_eq!(body["response_format"], json!({"type": "json_object"}));
     }
 
     #[test]
@@ -418,6 +512,7 @@ mod tests {
         );
         let mut settings = config(&url);
         settings.api_key = None;
+        settings.response_format = ResponseFormat::Text;
         OpenAiCompatibleClient::new(settings)
             .unwrap()
             .judge(&request())
@@ -434,6 +529,10 @@ mod tests {
             json!({"choices": []}).to_string(),
             response("not JSON", "stop"),
             response(r#"{"decision":"maybe","reason":"ok"}"#, "stop"),
+            response(r#"{"decision":"pass"}"#, "stop"),
+            response(r#"{"decision":"pass","reason":42}"#, "stop"),
+            response(r#"{"decision":"pass","reason":""}"#, "stop"),
+            response(r#"{"decision":"pass","reason":"ok","extra":true}"#, "stop"),
             response(r#"{"decision":"pass","reason":" "}"#, "stop"),
             response(r#"{"decision":"pass","reason":"ok"}"#, "length"),
         ] {
@@ -446,6 +545,19 @@ mod tests {
             ));
             server.join().unwrap();
         }
+    }
+
+    #[test]
+    fn schema_rejection_is_an_error_without_fallback() {
+        let (url, server) = mock_server(400, "unsupported schema".into(), Duration::ZERO);
+        assert!(matches!(
+            OpenAiCompatibleClient::new(config(&url))
+                .unwrap()
+                .judge(&request()),
+            Err(ModelError::Http(400))
+        ));
+        let (_, body) = server.join().unwrap();
+        assert_eq!(body["response_format"]["type"], "json_schema");
     }
 
     #[test]

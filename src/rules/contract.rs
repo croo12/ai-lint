@@ -1,6 +1,5 @@
-//! Shared contract and owned diagnostics for AST rules.
+//! Shared rule contracts and owned results, independent of concrete rules and evaluators.
 
-use crate::model::ModelRequest;
 use oxc_semantic::Semantic;
 use oxc_span::Span;
 use std::{ops::Range, path::Path};
@@ -78,12 +77,24 @@ pub struct RuleViolation {
     pub span: Span,
 }
 
+/// A rule candidate requiring judgment after AST traversal. The caller chooses
+/// how to evaluate it; this contract does not depend on an AI client.
+#[derive(Debug, Clone)]
+pub struct ReviewRequest {
+    pub rule_id: String,
+    pub span: Span,
+    pub criteria: String,
+    pub source: String,
+    /// Optional rule-authored output instead of the evaluator's explanation.
+    pub message: Option<String>,
+}
+
 pub struct RuleContext<'a> {
     rule_id: &'a str,
     file_path: Option<&'a Path>,
     changes: &'a ChangeMetadata,
     violations: &'a mut Vec<RuleViolation>,
-    model_requests: &'a mut Vec<ModelRequest>,
+    reviews: &'a mut Vec<ReviewRequest>,
 }
 
 impl<'a> RuleContext<'a> {
@@ -92,14 +103,14 @@ impl<'a> RuleContext<'a> {
         file_path: Option<&'a Path>,
         changes: &'a ChangeMetadata,
         violations: &'a mut Vec<RuleViolation>,
-        model_requests: &'a mut Vec<ModelRequest>,
+        reviews: &'a mut Vec<ReviewRequest>,
     ) -> Self {
         Self {
             rule_id,
             file_path,
             changes,
             violations,
-            model_requests,
+            reviews,
         }
     }
 
@@ -121,13 +132,13 @@ impl<'a> RuleContext<'a> {
     }
 
     /// Queue an owned code excerpt for judgment after AST traversal completes.
-    pub fn request_model(
+    pub fn request_review(
         &mut self,
         span: Span,
         criteria: impl Into<String>,
         source: impl Into<String>,
     ) {
-        self.model_requests.push(ModelRequest {
+        self.reviews.push(ReviewRequest {
             rule_id: self.rule_id.to_owned(),
             span,
             criteria: criteria.into(),
@@ -136,18 +147,15 @@ impl<'a> RuleContext<'a> {
         });
     }
 
-    pub fn request_model_with_message(
+    pub fn request_review_with_message(
         &mut self,
         span: Span,
         criteria: impl Into<String>,
         source: impl Into<String>,
         message: impl Into<String>,
     ) {
-        self.request_model(span, criteria, source);
-        self.model_requests
-            .last_mut()
-            .expect("request just added")
-            .message = Some(message.into());
+        self.request_review(span, criteria, source);
+        self.reviews.last_mut().expect("request just added").message = Some(message.into());
     }
 }
 

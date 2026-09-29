@@ -1,4 +1,4 @@
-//! OpenAI-compatible remote inference, independent of AST traversal.
+//! AI evaluation of rule reviews, including configuration and OpenAI-compatible HTTP calls.
 
 use std::{collections::HashMap, path::Path, time::Duration};
 
@@ -6,6 +6,8 @@ use oxc_span::Span;
 use reqwest::{Url, blocking::Client, redirect::Policy};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+
+use super::contract::{ReviewRequest, RuleViolation};
 
 #[derive(Debug, thiserror::Error)]
 pub enum ModelError {
@@ -133,6 +135,18 @@ pub struct ModelRequest {
     pub message: Option<String>,
 }
 
+impl From<ReviewRequest> for ModelRequest {
+    fn from(review: ReviewRequest) -> Self {
+        Self {
+            rule_id: review.rule_id,
+            span: review.span,
+            criteria: review.criteria,
+            source: review.source,
+            message: review.message,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Decision {
@@ -150,6 +164,30 @@ pub struct ModelJudgment {
 
 pub trait ModelClient {
     fn judge(&self, request: &ModelRequest) -> Result<ModelJudgment, ModelError>;
+}
+
+/// Evaluate pending rule reviews using owned excerpts, after the AST is released.
+/// No client is needed when there are no reviews. Indeterminate judgments and
+/// client failures remain execution errors, not partial successful results.
+pub fn evaluate_reviews(
+    reviews: Vec<ReviewRequest>,
+    model: Option<&dyn ModelClient>,
+) -> Result<Vec<RuleViolation>, ModelError> {
+    let mut violations = Vec::new();
+    for review in reviews {
+        let request = ModelRequest::from(review);
+        let judgment = model.ok_or(ModelError::NotConfigured)?.judge(&request)?;
+        match judgment.decision {
+            Decision::Violation => violations.push(RuleViolation {
+                rule_id: request.rule_id,
+                span: request.span,
+                message: request.message.unwrap_or(judgment.reason),
+            }),
+            Decision::Pass => {}
+            Decision::Unknown => return Err(ModelError::Unknown(request.rule_id)),
+        }
+    }
+    Ok(violations)
 }
 
 pub struct OpenAiCompatibleClient {
@@ -269,11 +307,109 @@ struct ChatMessage {
 mod tests {
     use super::*;
     use std::{
+        cell::Cell,
         io::{Read, Write},
         net::TcpListener,
         thread,
         time::Instant,
     };
+
+    fn review(message: Option<&str>) -> ReviewRequest {
+        ReviewRequest {
+            rule_id: "review-rule".into(),
+            span: Span::new(6, 7),
+            criteria: "inspect the argument".into(),
+            source: "alert(2);".into(),
+            message: message.map(str::to_owned),
+        }
+    }
+
+    struct ReviewModel {
+        decision: Decision,
+        calls: Cell<usize>,
+    }
+
+    impl ModelClient for ReviewModel {
+        fn judge(&self, request: &ModelRequest) -> Result<ModelJudgment, ModelError> {
+            self.calls.set(self.calls.get() + 1);
+            assert_eq!(request.rule_id, "review-rule");
+            assert_eq!(request.span, Span::new(6, 7));
+            assert_eq!(request.criteria, "inspect the argument");
+            assert_eq!(request.source, "alert(2);");
+            Ok(ModelJudgment {
+                decision: self.decision,
+                reason: "model reason".into(),
+            })
+        }
+    }
+
+    #[test]
+    fn reviews_preserve_decisions_locations_and_authored_messages() {
+        for decision in [Decision::Pass, Decision::Violation] {
+            for message in [None, Some("rule message")] {
+                let model = ReviewModel {
+                    decision,
+                    calls: Cell::new(0),
+                };
+                let violations = evaluate_reviews(vec![review(message)], Some(&model)).unwrap();
+                assert_eq!(model.calls.get(), 1);
+                match decision {
+                    Decision::Pass => assert!(violations.is_empty()),
+                    Decision::Violation => {
+                        assert_eq!(violations.len(), 1);
+                        assert_eq!(violations[0].rule_id, "review-rule");
+                        assert_eq!(violations[0].span, Span::new(6, 7));
+                        assert_eq!(violations[0].message, message.unwrap_or("model reason"));
+                    }
+                    Decision::Unknown => unreachable!(),
+                }
+            }
+        }
+    }
+
+    struct UnavailableModel;
+
+    impl ModelClient for UnavailableModel {
+        fn judge(&self, _: &ModelRequest) -> Result<ModelJudgment, ModelError> {
+            Err(ModelError::Transport)
+        }
+    }
+
+    #[test]
+    fn reviews_preserve_configuration_unknown_and_transport_errors() {
+        assert!(matches!(
+            evaluate_reviews(vec![review(None)], None),
+            Err(ModelError::NotConfigured)
+        ));
+        let unknown = ReviewModel {
+            decision: Decision::Unknown,
+            calls: Cell::new(0),
+        };
+        assert!(matches!(
+            evaluate_reviews(vec![review(None), review(None)], Some(&unknown)),
+            Err(ModelError::Unknown(id)) if id == "review-rule"
+        ));
+        assert_eq!(unknown.calls.get(), 1);
+        assert!(matches!(
+            evaluate_reviews(vec![review(None)], Some(&UnavailableModel)),
+            Err(ModelError::Transport)
+        ));
+    }
+
+    #[test]
+    fn empty_reviews_need_no_client_and_make_no_calls() {
+        assert!(evaluate_reviews(Vec::new(), None).unwrap().is_empty());
+        let model = ReviewModel {
+            decision: Decision::Violation,
+            calls: Cell::new(0),
+        };
+        assert!(
+            evaluate_reviews(Vec::new(), Some(&model))
+                .unwrap()
+                .is_empty()
+        );
+        assert_eq!(model.calls.get(), 0);
+    }
 
     fn config(base: &str) -> ModelConfig {
         ModelConfig::from_lookup(|key| match key {

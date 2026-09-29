@@ -2,8 +2,8 @@
 
 use crate::{
     analyzer::{AnalyzedFile, ChangeKind as AnalyzedChangeKind},
-    rule::{ChangeKind, ChangeMetadata, ChangedRange},
     rule_engine::RuleInput,
+    rules::contract::{ChangeKind, ChangeMetadata, ChangedRange},
 };
 
 impl<'a> From<&'a AnalyzedFile<'a>> for RuleInput<'a> {
@@ -34,9 +34,11 @@ mod tests {
     use super::*;
     use crate::{
         analyzer::{Allocator, Analyzer, ChangedFile},
-        rule::{Rule, RuleContext},
         rule_engine::RuleEngine,
-        rules,
+        rules::{
+            self,
+            contract::{Rule, RuleContext},
+        },
     };
     use oxc_semantic::Semantic;
     use oxc_span::Span;
@@ -115,9 +117,7 @@ mod tests {
         let allocator = Allocator::default();
         let analyzed = Analyzer::analyze(&allocator, &file).unwrap();
         let engine = RuleEngine::new(vec![Box::new(ChangeAwareRule)]);
-        let violations = engine
-            .resolve(engine.check((&analyzed).into()).unwrap())
-            .unwrap();
+        let violations = engine.check((&analyzed).into()).unwrap().violations;
         assert_eq!(violations.len(), 1);
         assert_eq!(violations[0].span, Span::new(6, 7));
     }
@@ -129,9 +129,7 @@ mod tests {
         let analyzed = Analyzer::analyze(&allocator, &file).unwrap();
         for id in ["no-alert", "no-console-log"] {
             let engine = rules::select(&[id.into()]).unwrap();
-            let violations = engine
-                .resolve(engine.check((&analyzed).into()).unwrap())
-                .unwrap();
+            let violations = engine.check((&analyzed).into()).unwrap().violations;
             assert_eq!(violations.len(), 1);
             assert_eq!(violations[0].rule_id, id);
         }
@@ -150,7 +148,7 @@ mod tests {
     }
 
     #[test]
-    fn invalid_or_panicked_analysis_does_not_run_rules_or_request_a_model() {
+    fn invalid_or_panicked_analysis_does_not_run_rules_or_request_reviews() {
         let engine = RuleEngine::new(vec![Box::new(MustNotRun)]);
         for source in ["const x: = 1;", "const x = 1;"] {
             let file = ChangedFile::new("test.ts", source);
@@ -161,8 +159,7 @@ mod tests {
             }
             let check = engine.check((&analyzed).into()).unwrap();
             assert!(check.violations.is_empty());
-            assert!(check.model_requests.is_empty());
-            assert!(engine.resolve(check).unwrap().is_empty());
+            assert!(check.reviews.is_empty());
         }
     }
 
@@ -173,9 +170,7 @@ mod tests {
         let allocator = Allocator::default();
         let analyzed = Analyzer::analyze(&allocator, &file).unwrap();
         let engine = rules::select(&["no-alert".into()]).unwrap();
-        let violations = engine
-            .resolve(engine.check((&analyzed).into()).unwrap())
-            .unwrap();
+        let violations = engine.check((&analyzed).into()).unwrap().violations;
         assert_eq!(violations.len(), 1);
         assert!(violations[0].span.end as usize <= analyzed.changes.range.unwrap().after.start);
     }

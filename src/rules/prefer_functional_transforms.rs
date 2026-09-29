@@ -1,7 +1,7 @@
 use super::ast_helpers::{
     contains, excerpt, is_function, local_function, loop_body, reference_symbol,
 };
-use crate::rule::{Rule, RuleContext};
+use super::contract::{Rule, RuleContext};
 use oxc_ast::{
     AstKind,
     ast::{BindingPattern, Expression},
@@ -32,7 +32,7 @@ impl Rule for PreferFunctionalTransforms {
     }
     fn check(&self, semantic: &Semantic<'_>, context: &mut RuleContext<'_>) {
         for function in candidates(semantic) {
-            context.request_model_with_message(
+            context.request_review_with_message(
                 function,
                 CRITERIA,
                 excerpt(semantic.source_text(), function),

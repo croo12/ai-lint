@@ -1,6 +1,6 @@
+use super::super::contract::RuleViolation;
 use crate::{
     analyzer::{Allocator, Analyzer, ChangedFile},
-    rule::RuleViolation,
     rules::select,
 };
 
@@ -14,9 +14,7 @@ fn check_file(path: &str, source: &str) -> Vec<RuleViolation> {
         "{source}: {:?}",
         result.syntax_errors
     );
-    engine
-        .resolve(engine.check((&result).into()).unwrap())
-        .unwrap()
+    engine.check((&result).into()).unwrap().violations
 }
 fn check(source: &str) -> Vec<RuleViolation> {
     check_file("example.test.tsx", source)

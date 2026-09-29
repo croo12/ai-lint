@@ -1,4 +1,6 @@
+pub mod ai_model;
 mod ast_helpers;
+pub mod contract;
 
 pub mod contextual_effect;
 pub mod no_alert;
@@ -14,7 +16,8 @@ pub mod prefer_functional_transforms;
 #[cfg(test)]
 mod tests;
 
-use crate::{rule::Rule, rule_engine::RuleEngine};
+use self::contract::Rule;
+use crate::rule_engine::RuleEngine;
 
 pub const IDS: &[&str] = &[
     "no-set-state-in-effect",

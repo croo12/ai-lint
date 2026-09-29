@@ -3,7 +3,7 @@ mod facts;
 #[cfg(test)]
 mod tests;
 
-use crate::rule::{Rule, RuleContext, RuleScope};
+use super::contract::{Rule, RuleContext, RuleScope};
 use facts::{Facts, Hook, argument, is_query_library, member, module_hook_name};
 use oxc_ast::{AstKind, ast::CallExpression};
 use oxc_semantic::Semantic;

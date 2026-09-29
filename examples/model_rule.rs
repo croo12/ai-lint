@@ -3,8 +3,10 @@ use std::{env, error::Error, process::ExitCode};
 
 use ai_lint::{
     analyzer::{Allocator, Analyzer, ChangedFile},
-    model::{ModelConfig, ModelError, OpenAiCompatibleClient},
-    rules,
+    rules::{
+        self,
+        ai_model::{ModelConfig, ModelError, OpenAiCompatibleClient, evaluate_reviews},
+    },
 };
 
 fn run() -> Result<ExitCode, Box<dyn Error>> {
@@ -13,8 +15,8 @@ fn run() -> Result<ExitCode, Box<dyn Error>> {
         return Err("usage: cargo run --example model_rule -- FILE RULE_ID".into());
     }
     let config = ModelConfig::load(".env")?.ok_or(ModelError::NotConfigured)?;
-    let engine = rules::select(&[args[1].clone()])?
-        .with_model(Box::new(OpenAiCompatibleClient::new(config)?));
+    let engine = rules::select(&[args[1].clone()])?;
+    let model = OpenAiCompatibleClient::new(config)?;
     let file = ChangedFile::read(&args[0])?;
     let (syntax_errors, check) = {
         let allocator = Allocator::default();
@@ -22,7 +24,8 @@ fn run() -> Result<ExitCode, Box<dyn Error>> {
         let check = engine.check((&analyzed).into())?;
         (analyzed.syntax_errors, check)
     };
-    let violations = engine.resolve(check)?;
+    let mut violations = check.violations;
+    violations.extend(evaluate_reviews(check.reviews, Some(&model))?);
     for error in &syntax_errors {
         eprintln!("{error}");
     }

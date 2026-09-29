@@ -1,4 +1,4 @@
-use crate::rule::{Rule, RuleContext};
+use super::contract::{Rule, RuleContext};
 use oxc_ast::AstKind;
 use oxc_semantic::Semantic;
 

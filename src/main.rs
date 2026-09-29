@@ -5,10 +5,12 @@ use std::{
 
 use ai_lint::{
     analyzer::{Allocator, Analyzer, ChangedFile},
-    model::{ModelConfig, OpenAiCompatibleClient},
-    rule::RuleViolation,
     rule_engine::RuleEngine,
-    rules,
+    rules::{
+        self,
+        ai_model::{ModelClient, ModelConfig, OpenAiCompatibleClient, evaluate_reviews},
+        contract::RuleViolation,
+    },
 };
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use serde_json::json;
@@ -70,8 +72,8 @@ fn run_check(args: CheckArgs) -> ExitCode {
     if args.format == OutputFormat::Json {
         return run_check_json(args);
     }
-    let engine = match configured_engine(&args.env_file, &args.rule_ids) {
-        Ok(engine) => engine,
+    let services = match configured_services(&args.env_file, &args.rule_ids) {
+        Ok(services) => services,
         Err(error) => {
             eprintln!("ai-lint: {error}");
             return ExitCode::from(EXIT_ERROR);
@@ -80,7 +82,7 @@ fn run_check(args: CheckArgs) -> ExitCode {
     let mut finding_count = 0;
 
     for path in &args.files {
-        match check_file(path, &engine) {
+        match check_file(path, &services) {
             Ok(count) => finding_count += count,
             Err(message) => {
                 eprintln!("ai-lint: {message}");
@@ -103,11 +105,11 @@ fn run_check_json(args: CheckArgs) -> ExitCode {
     let mut errors = Vec::new();
     let mut findings = 0;
 
-    match configured_engine(&args.env_file, &args.rule_ids) {
+    match configured_services(&args.env_file, &args.rule_ids) {
         Err(error) => errors.push(error.to_string()),
-        Ok(engine) => {
+        Ok(services) => {
             for path in &args.files {
-                match analyze_and_check_file(path, &engine) {
+                match analyze_and_check_file(path, &services) {
                     Err(error) => errors.push(format!("{}: {error}", path.display())),
                     Ok(analyzed) => {
                         findings += analyzed.syntax_errors.len() + analyzed.rule_violations.len();
@@ -142,23 +144,28 @@ fn run_check_json(args: CheckArgs) -> ExitCode {
     ExitCode::from(exit_code)
 }
 
-fn configured_engine(
+struct CheckServices {
+    engine: RuleEngine,
+    model: Option<OpenAiCompatibleClient>,
+}
+
+fn configured_services(
     env_file: &Path,
     rule_ids: &[String],
-) -> Result<RuleEngine, Box<dyn std::error::Error>> {
+) -> Result<CheckServices, Box<dyn std::error::Error>> {
     let engine = if rule_ids.is_empty() {
         rules::default_engine()
     } else {
         rules::select(rule_ids)?
     };
-    match ModelConfig::load(env_file)? {
-        Some(config) => Ok(engine.with_model(Box::new(OpenAiCompatibleClient::new(config)?))),
-        None => Ok(engine),
-    }
+    let model = ModelConfig::load(env_file)?
+        .map(OpenAiCompatibleClient::new)
+        .transpose()?;
+    Ok(CheckServices { engine, model })
 }
 
-fn check_file(path: &Path, engine: &RuleEngine) -> Result<usize, String> {
-    let analyzed = analyze_and_check_file(path, engine)
+fn check_file(path: &Path, services: &CheckServices) -> Result<usize, String> {
+    let analyzed = analyze_and_check_file(path, services)
         .map_err(|error| format!("{}: {error}", path.display()))?;
 
     for diagnostic in &analyzed.syntax_errors {
@@ -186,20 +193,29 @@ struct CheckedFile {
 }
 
 /// The CLI composes analysis and evaluation, retaining only owned data for output.
-fn analyze_and_check_file(path: &Path, engine: &RuleEngine) -> Result<CheckedFile, String> {
+fn analyze_and_check_file(path: &Path, services: &CheckServices) -> Result<CheckedFile, String> {
     let file = ChangedFile::read(path).map_err(|error| error.to_string())?;
     let (syntax_errors, check) = {
         let allocator = Allocator::default();
         let analyzed = Analyzer::analyze(&allocator, &file).map_err(|error| error.to_string())?;
-        let check = engine
+        let check = services
+            .engine
             .check((&analyzed).into())
             .map_err(|error| format!("rule evaluation failed: {error}"))?;
         (analyzed.syntax_errors, check)
     };
     // No AST or allocator is retained while the model processes owned requests.
-    let rule_violations = engine
-        .resolve(check)
-        .map_err(|error| format!("model evaluation failed: {error}"))?;
+    let mut rule_violations = check.violations;
+    rule_violations.extend(
+        evaluate_reviews(
+            check.reviews,
+            services
+                .model
+                .as_ref()
+                .map(|model| model as &dyn ModelClient),
+        )
+        .map_err(|error| format!("model evaluation failed: {error}"))?,
+    );
     Ok(CheckedFile {
         source: file.source,
         syntax_errors,

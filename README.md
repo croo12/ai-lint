@@ -91,18 +91,19 @@ cargo run -- check src/App.tsx
 ## 모듈
 
 - `analyzer/`: 변경 파일을 입력받아 AST·문법 오류·변경 메타데이터 반환. 다른 프로젝트 모듈을 참조하지 않음
-- `rule`: 엔진에서 사용하는 변경 메타데이터, 진단과 모델 요청 수집용 문맥, `RuleViolation`
-- `rule_engine/`: `RuleInput`을 받아 등록된 규칙 실행 및 위반 결과 수집. `analyzer`를 참조하지 않음
+- `rule_engine/`: `RuleInput`을 받아 등록된 규칙 실행 및 위반·추가 판단 요청 수집. 프로젝트 모듈 중 `rules::contract`만 참조
 - `pipeline`: 분석 반환값을 엔진 입력으로 변환하는 연결 코드
-- `model`: 환경 설정, 모델 클라이언트 인터페이스, OpenAI 호환 HTTP 클라이언트
 - `rules`: 규칙별 Rust 구현과 ID 레지스트리
+- `rules/contract`: 공통 `Rule` 인터페이스, 변경 메타데이터, 진단·추가 판단 요청 수집용 문맥, `RuleViolation`·`ReviewRequest`
+- `rules/ai_model`: AI 모델 호출 설정·HTTP 클라이언트, 추가 판단 요청 평가 및 응답을 위반 결과로 변환
 - `rules/ast_helpers`: 룰 내부에서 공유하는 AST 탐색·바인딩 도구
 
 호출부가 `ChangedFile`과 `Allocator`를 소유하고 `Analyzer::analyze`의 반환값을
 `RuleInput`으로 변환해 `RuleEngine::check`에 전달합니다. 두 모듈은 서로의 타입을 참조하지 않으며
-변환은 `pipeline`의 `From` 구현이 담당합니다. AST는 입력 소스와 allocator를 빌리며, 모델 요청과
-위반 결과는 독립적인 소유권을 가집니다. CLI는 AST를 해제한 뒤 `RuleEngine::resolve`로
-모델 요청을 처리합니다. 사용 예와 변경 메타데이터는 [규칙 작성 가이드](docs/rust-rules.md#분석과-규칙-실행)에 있습니다.
+변환은 `pipeline`의 `From` 구현이 담당합니다. AST는 입력 소스와 allocator를 빌리며,
+`RuleCheck`의 위반 결과와 추가 판단 요청은 독립적인 소유권을 가집니다. CLI는 AST를 해제한 뒤
+`rules::ai_model::evaluate_reviews`로 추가 판단 요청을 처리하고 결과를 합칩니다. 모델 클라이언트는 CLI가
+별도로 소유합니다. 사용 예와 변경 메타데이터는 [규칙 작성 가이드](docs/rust-rules.md#분석과-규칙-실행)에 있습니다.
 
 ## Rust 규칙
 
@@ -185,7 +186,7 @@ AI_LINT_MODEL_RESPONSE_FORMAT=json_schema
 
 ## 모델을 사용하는 규칙 추가
 
-Rust 규칙에서 `RuleContext::request_model_with_message`로 후보와 판단 기준을 전달합니다.
+Rust 규칙에서 `RuleContext::request_review_with_message`로 후보와 판단 기준을 전달합니다.
 선택한 소스가 설정한 원격 서버로 전송되며, 후보가 없으면 모델 요청도 없습니다.
 `violation`은 진단, `pass`는 통과, `unknown`·모델 미설정·통신 오류는 실행 오류입니다.
 `.env`는 매 검사마다 읽으므로 값 변경 시 재빌드하지 않습니다.

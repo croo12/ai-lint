@@ -1,7 +1,4 @@
-use crate::{
-    model::ModelRequest,
-    rule::{ChangeMetadata, RuleViolation},
-};
+use crate::rules::contract::{ChangeMetadata, ReviewRequest, RuleViolation};
 use oxc_ast::ast::Program;
 use std::path::Path;
 
@@ -13,9 +10,9 @@ pub struct RuleInput<'a> {
     pub changes: ChangeMetadata,
 }
 
-/// Owned findings and model requests collected during rule evaluation.
+/// Owned findings and pending reviews collected during rule evaluation.
 #[derive(Default)]
 pub struct RuleCheck {
     pub violations: Vec<RuleViolation>,
-    pub model_requests: Vec<ModelRequest>,
+    pub reviews: Vec<ReviewRequest>,
 }

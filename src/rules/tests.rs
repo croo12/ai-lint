@@ -1,9 +1,9 @@
-use super::*;
-use crate::{
-    analyzer::{Allocator, Analyzer, ChangedFile},
-    model::{Decision, ModelClient, ModelError, ModelJudgment, ModelRequest},
-    rule::{RuleContext, RuleScope, RuleViolation},
+use super::ai_model::{
+    Decision, ModelClient, ModelError, ModelJudgment, ModelRequest, evaluate_reviews,
 };
+use super::contract::{RuleContext, RuleScope, RuleViolation};
+use super::*;
+use crate::analyzer::{Allocator, Analyzer, ChangedFile};
 use oxc_semantic::Semantic;
 use oxc_span::Span;
 
@@ -17,6 +17,15 @@ fn check_source(
     source: &str,
     engine: &RuleEngine,
 ) -> Result<CheckedSource, ModelError> {
+    check_source_with_model(path, source, engine, None)
+}
+
+fn check_source_with_model(
+    path: &str,
+    source: &str,
+    engine: &RuleEngine,
+    model: Option<&dyn ModelClient>,
+) -> Result<CheckedSource, ModelError> {
     let file = ChangedFile::new(path, source);
     let (syntax_errors, check) = {
         let allocator = Allocator::default();
@@ -24,9 +33,11 @@ fn check_source(
         let check = engine.check((&analyzed).into()).unwrap();
         (analyzed.syntax_errors, check)
     };
+    let mut rule_violations = check.violations;
+    rule_violations.extend(evaluate_reviews(check.reviews, model)?);
     Ok(CheckedSource {
         syntax_errors,
-        rule_violations: engine.resolve(check)?,
+        rule_violations,
     })
 }
 
@@ -40,8 +51,8 @@ impl ModelClient for Stub {
     }
 }
 fn check(id: &str, source: &str) -> Vec<RuleViolation> {
-    let engine = select(&[id.into()]).unwrap().with_model(Box::new(Stub));
-    let result = check_source("test.tsx", source, &engine).unwrap();
+    let engine = select(&[id.into()]).unwrap();
+    let result = check_source_with_model("test.tsx", source, &engine, Some(&Stub)).unwrap();
     assert!(
         result.syntax_errors.is_empty(),
         "{:?}",
@@ -423,13 +434,12 @@ fn model_rules_send_function_context_once_and_preserve_decisions() {
         ),
     ] {
         for decision in [Decision::Pass, Decision::Violation, Decision::Unknown] {
-            let engine = select(&[id.into()])
-                .unwrap()
-                .with_model(Box::new(ExpectModel {
-                    decision,
-                    expected: source.into(),
-                }));
-            let result = check_source("test.ts", source, &engine);
+            let engine = select(&[id.into()]).unwrap();
+            let model = ExpectModel {
+                decision,
+                expected: source.into(),
+            };
+            let result = check_source_with_model("test.ts", source, &engine, Some(&model));
             match decision {
                 Decision::Pass => assert!(result.unwrap().rule_violations.is_empty()),
                 Decision::Violation => assert_eq!(result.unwrap().rule_violations.len(), 1),

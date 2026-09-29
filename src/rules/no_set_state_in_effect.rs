@@ -1,5 +1,5 @@
 use super::ast_helpers::{callee_name, contains, enclosing_function, reference_symbol};
-use crate::rule::{Rule, RuleContext};
+use super::contract::{Rule, RuleContext};
 use oxc_ast::{
     AstKind,
     ast::{BindingPattern, Expression},

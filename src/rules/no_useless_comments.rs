@@ -1,4 +1,4 @@
-use crate::rule::{Rule, RuleContext};
+use super::contract::{Rule, RuleContext};
 use oxc_semantic::Semantic;
 
 /// Reject comments that belong in code, issue trackers, or ADRs.

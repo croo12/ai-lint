@@ -1,8 +1,6 @@
 //! React 19 passes `ref` as an ordinary prop, so `forwardRef` is no longer needed.
-use crate::{
-    ast::calls_module_export,
-    rule::{Rule, RuleContext},
-};
+use super::ast_helpers::calls_module_export;
+use crate::rule::{Rule, RuleContext};
 use oxc_ast::AstKind;
 use oxc_semantic::Semantic;
 

@@ -1,4 +1,5 @@
-//! Shared typed AST helpers; rule policies live in `rules`.
+//! AST traversal and binding helpers shared by rule implementations.
+//! Operates on the parsed AST and semantic information supplied by the engine.
 use oxc_ast::{
     AstKind,
     ast::{BindingPattern, Expression, VariableDeclarator},
@@ -6,7 +7,7 @@ use oxc_ast::{
 use oxc_semantic::{AstNode, NodeId, Semantic};
 use oxc_span::{GetSpan, Span};
 
-pub fn callee_name(expression: &Expression<'_>) -> Option<String> {
+pub(super) fn callee_name(expression: &Expression<'_>) -> Option<String> {
     match expression.get_inner_expression() {
         Expression::Identifier(id) => Some(id.name.to_string()),
         Expression::StaticMemberExpression(member) => Some(format!(
@@ -20,7 +21,7 @@ pub fn callee_name(expression: &Expression<'_>) -> Option<String> {
 
 /// How a local binding entered the file from another module.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Import {
+pub(super) enum Import {
     /// `import { name as local } from "module"`.
     Named { module: String, name: String },
     /// `import local from "module"` or `import * as local from "module"`.
@@ -31,7 +32,10 @@ pub enum Import {
 const ALIAS_DEPTH: u8 = 12;
 
 /// Resolves an identifier to the module export it denotes, through local aliases.
-pub fn resolve_import(semantic: &Semantic<'_>, expression: &Expression<'_>) -> Option<Import> {
+pub(super) fn resolve_import(
+    semantic: &Semantic<'_>,
+    expression: &Expression<'_>,
+) -> Option<Import> {
     resolve_alias(semantic, expression, 0)
 }
 
@@ -113,7 +117,7 @@ fn declaration_node(semantic: &Semantic<'_>, expression: &Expression<'_>) -> Opt
 /// name, `<binding>.name` on a default or namespace import of `module`, or a local alias of
 /// either. An identifier that resolves to no declaration at all falls back to a name match,
 /// so a pasted fragment without its imports still reports.
-pub fn calls_module_export(
+pub(super) fn calls_module_export(
     semantic: &Semantic<'_>,
     callee: &Expression<'_>,
     module: &str,
@@ -139,7 +143,10 @@ pub fn calls_module_export(
     }
 }
 
-pub fn reference_symbol(semantic: &Semantic<'_>, expression: &Expression<'_>) -> Option<usize> {
+pub(super) fn reference_symbol(
+    semantic: &Semantic<'_>,
+    expression: &Expression<'_>,
+) -> Option<usize> {
     let Expression::Identifier(id) = expression.get_inner_expression() else {
         return None;
     };
@@ -149,14 +156,14 @@ pub fn reference_symbol(semantic: &Semantic<'_>, expression: &Expression<'_>) ->
         .map(|id| id.index())
 }
 
-pub fn is_function(kind: AstKind<'_>) -> bool {
+pub(super) fn is_function(kind: AstKind<'_>) -> bool {
     matches!(
         kind,
         AstKind::Function(_) | AstKind::ArrowFunctionExpression(_)
     )
 }
 
-pub fn enclosing_function(semantic: &Semantic<'_>, node: &AstNode<'_>) -> Option<Span> {
+pub(super) fn enclosing_function(semantic: &Semantic<'_>, node: &AstNode<'_>) -> Option<Span> {
     semantic
         .nodes()
         .ancestor_kinds(node.id())
@@ -165,7 +172,7 @@ pub fn enclosing_function(semantic: &Semantic<'_>, node: &AstNode<'_>) -> Option
 }
 
 /// Class initializers are outside an enclosing function's own execution body.
-pub fn local_function(semantic: &Semantic<'_>, node: &AstNode<'_>) -> Option<Span> {
+pub(super) fn local_function(semantic: &Semantic<'_>, node: &AstNode<'_>) -> Option<Span> {
     semantic
         .nodes()
         .ancestor_kinds(node.id())
@@ -174,14 +181,14 @@ pub fn local_function(semantic: &Semantic<'_>, node: &AstNode<'_>) -> Option<Spa
         .map(|kind| kind.span())
 }
 
-pub fn contains(outer: Span, inner: Span) -> bool {
+pub(super) fn contains(outer: Span, inner: Span) -> bool {
     outer.start <= inner.start && inner.end <= outer.end
 }
-pub fn excerpt(source: &str, span: Span) -> &str {
+pub(super) fn excerpt(source: &str, span: Span) -> &str {
     &source[span.start as usize..span.end as usize]
 }
 
-pub fn loop_body(kind: AstKind<'_>) -> Option<Span> {
+pub(super) fn loop_body(kind: AstKind<'_>) -> Option<Span> {
     match kind {
         AstKind::ForStatement(node) => Some(node.body.span()),
         AstKind::ForOfStatement(node) => Some(node.body.span()),

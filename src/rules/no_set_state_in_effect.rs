@@ -1,7 +1,5 @@
-use crate::{
-    ast::{callee_name, contains, enclosing_function, reference_symbol},
-    rule::{Rule, RuleContext},
-};
+use super::ast_helpers::{callee_name, contains, enclosing_function, reference_symbol};
+use crate::rule::{Rule, RuleContext};
 use oxc_ast::{
     AstKind,
     ast::{BindingPattern, Expression},

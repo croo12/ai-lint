@@ -1,8 +1,5 @@
-use super::no_set_state_in_effect;
-use crate::{
-    ast::excerpt,
-    rule::{Rule, RuleContext},
-};
+use super::{ast_helpers::excerpt, no_set_state_in_effect};
+use crate::rule::{Rule, RuleContext};
 use oxc_semantic::Semantic;
 
 pub struct ContextualEffect;

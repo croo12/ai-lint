@@ -24,7 +24,9 @@ impl Rule for NoDebugger {
 
 저장소 내부에서는 `ai_lint::rule` 대신 `crate::rule`을 사용합니다.
 파일을 추가한 뒤 `src/rules/mod.rs`에 모듈, `IDS` 항목, `select` 생성 분기를 등록하세요.
-`ast.rs`는 호출 이름·바인딩·상위 함수·반복문 본문·소스 범위를 다루는 공통 도구입니다.
+`src/rules/ast_helpers.rs`는 룰 내부에서 공유하는 AST 탐색 도구입니다.
+생성된 AST에서 호출 이름·바인딩·상위 함수·반복문 본문·소스 범위를 확인하며,
+같은 폴더의 룰은 `super::ast_helpers`로 가져옵니다. 소스 파싱은 `analyzer`가 담당합니다.
 바인딩은 Oxc 심볼을 사용해 이름 가려짐과 블록 스코프를 구분합니다.
 새 규칙에는 정상·위반·스코프 경계 사례의 Rust 테스트를 추가합니다.
 
@@ -138,7 +140,7 @@ default export, namespace import는 허용합니다. 실제 외부 사용 여부
 
 ## 금지된 React 호출
 
-`no-create-context`와 `no-forward-ref`는 `ast::calls_module_export`를 공유하는 AST 전용
+`no-create-context`와 `no-forward-ref`는 `ast_helpers::calls_module_export`를 공유하는 AST 전용
 규칙입니다. 호출식만 검사하며 import 선언 자체나 타입 참조는 보고하지 않습니다.
 
 판정은 이름 비교가 아니라 **바인딩 해석**입니다. 식별자를 `reference_id` → `symbol_id` →

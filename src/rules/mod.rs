@@ -1,3 +1,5 @@
+mod ast_helpers;
+
 pub mod contextual_effect;
 pub mod no_alert;
 pub mod no_console_log;

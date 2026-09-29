@@ -96,7 +96,7 @@ cargo run -- check src/App.tsx
 - `pipeline`: 분석 반환값을 엔진 입력으로 변환하는 연결 코드
 - `model`: 환경 설정, 모델 클라이언트 인터페이스, OpenAI 호환 HTTP 클라이언트
 - `rules`: 규칙별 Rust 구현과 ID 레지스트리
-- `ast`: 공통 AST 탐색·바인딩 도구
+- `rules/ast_helpers`: 룰 내부에서 공유하는 AST 탐색·바인딩 도구
 
 호출부가 `ChangedFile`과 `Allocator`를 소유하고 `Analyzer::analyze`의 반환값을
 `RuleInput`으로 변환해 `RuleEngine::check`에 전달합니다. 두 모듈은 서로의 타입을 참조하지 않으며

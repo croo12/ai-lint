@@ -1,5 +1,5 @@
 //! File-local binding and mock-factory analysis. No project traversal or model calls.
-use crate::ast::{enclosing_function, reference_symbol};
+use super::super::ast_helpers::{enclosing_function, reference_symbol};
 use oxc_ast::{
     AstKind,
     ast::{CallExpression, Expression, ImportDeclarationSpecifier, ObjectExpression},

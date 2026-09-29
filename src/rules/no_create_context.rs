@@ -1,8 +1,6 @@
 //! Route every React context through the project's createSafeContext factory.
-use crate::{
-    ast::calls_module_export,
-    rule::{Rule, RuleContext},
-};
+use super::ast_helpers::calls_module_export;
+use crate::rule::{Rule, RuleContext};
 use oxc_ast::AstKind;
 use oxc_semantic::{AstNode, Semantic};
 

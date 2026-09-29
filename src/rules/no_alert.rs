@@ -1,7 +1,5 @@
-use crate::{
-    ast::callee_name,
-    rule::{Rule, RuleContext},
-};
+use super::ast_helpers::callee_name;
+use crate::rule::{Rule, RuleContext};
 use oxc_ast::AstKind;
 use oxc_semantic::Semantic;
 

@@ -1,7 +1,7 @@
-use crate::{
-    ast::{contains, excerpt, local_function, loop_body, reference_symbol},
-    rule::{Rule, RuleContext},
+use super::ast_helpers::{
+    contains, excerpt, is_function, local_function, loop_body, reference_symbol,
 };
+use crate::rule::{Rule, RuleContext};
 use oxc_ast::{
     AstKind,
     ast::{BindingPattern, Expression},
@@ -106,7 +106,7 @@ pub(super) fn candidates(semantic: &Semantic<'_>) -> Vec<Span> {
         let in_loop = semantic
             .nodes()
             .ancestor_kinds(node.id())
-            .take_while(|kind| !crate::ast::is_function(*kind))
+            .take_while(|kind| !is_function(*kind))
             .any(|kind| {
                 loop_body(kind).is_some_and(|body| {
                     contains(body, call.span) && array.declaration.end <= kind.span().start

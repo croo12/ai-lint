@@ -4,7 +4,7 @@ mod types;
 
 pub use types::{RuleCheck, RuleInput};
 
-use crate::rules::contract::{Rule, RuleContext};
+use ai_lint_rule_contract::{Rule, RuleContext};
 use oxc_semantic::SemanticBuilder;
 
 #[derive(Default)]

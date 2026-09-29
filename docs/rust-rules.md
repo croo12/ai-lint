@@ -1,9 +1,9 @@
 # Rust 규칙 작성
 
-규칙은 `src/rules/`에 작성하고 CLI와 함께 컴파일합니다. YAML 및 런타임 Rust 스크립트는 지원하지 않습니다.
+규칙은 `crates/rules/src/`에 작성하고 CLI와 함께 컴파일합니다. YAML 및 런타임 Rust 스크립트는 지원하지 않습니다.
 
 ```rust
-use ai_lint::rules::contract::{Rule, RuleContext};
+use ai_lint_rule_contract::{Rule, RuleContext};
 use oxc_ast::AstKind;
 use oxc_semantic::Semantic;
 
@@ -22,14 +22,16 @@ impl Rule for NoDebugger {
 }
 ```
 
-공통 인터페이스와 데이터 타입은 `src/rules/contract.rs`에 있습니다.
-같은 폴더의 룰은 `super::contract`, 엔진 등 다른 모듈은 `crate::rules::contract`를 사용합니다.
-파일을 추가한 뒤 `src/rules/mod.rs`에 모듈, `IDS` 항목, `select` 생성 분기를 등록하세요.
-`src/rules/ast_helpers.rs`는 룰 내부에서 공유하는 AST 탐색 도구입니다.
+공통 인터페이스와 데이터 타입은 독립 crate인 `crates/rules/contract/src/lib.rs`에 있습니다.
+룰과 엔진은 `ai_lint_rule_contract`를 사용합니다. 룰 내부에서는 재공개한 `super::contract`도 사용할 수 있습니다.
+파일을 추가한 뒤 `crates/rules/src/lib.rs`에 모듈, `IDS` 항목, `select` 생성 분기를 등록하세요.
+`crates/rules/src/ast_helpers.rs`는 룰 내부에서 공유하는 AST 탐색 도구입니다.
 생성된 AST에서 호출 이름·바인딩·상위 함수·반복문 본문·소스 범위를 확인하며,
 같은 폴더의 룰은 `super::ast_helpers`로 가져옵니다. 소스 파싱은 `analyzer`가 담당합니다.
 바인딩은 Oxc 심볼을 사용해 이름 가려짐과 블록 스코프를 구분합니다.
 새 규칙에는 정상·위반·스코프 경계 사례의 Rust 테스트를 추가합니다.
+분석기와 엔진을 함께 사용하는 규칙 테스트는 루트 `tests/rules.rs` 또는 별도 통합 테스트 파일에 둡니다.
+`rules` crate에는 분석기나 엔진을 개발 의존성으로도 추가하지 않습니다.
 
 ## 파일 범위 지정
 
@@ -54,7 +56,7 @@ impl Rule for NoDebugger {
 
 테스트 판정은 파일명만 봅니다. `*.browser.test.tsx`처럼 접미사가 일치하면 포함하고,
 `*.spec.ts`·JS 테스트·`__tests__` 디렉터리·`a.test.ts/b.ts`처럼 디렉터리 이름만 일치하는
-경로는 포함하지 않습니다. 접미사를 넓히려면 `src/rules/contract.rs`의 `is_test_file`을 수정합니다.
+경로는 포함하지 않습니다. 접미사를 넓히려면 `crates/rules/contract/src/lib.rs`의 `is_test_file`을 수정합니다.
 
 `RuleEngine::check(input)`은 `RuleInput.path`를 사용해 파일 범위를 판정합니다.
 접미사보다 세밀한 파일별 정책이 필요하면 `context.file_path()`에서 경로를 직접 읽습니다.
@@ -68,39 +70,43 @@ target/release/ai-lint check --rules no-alert --rules no-console-log src/App.tsx
 
 `--rules ID`는 반복 가능하며 생략하면 `no-set-state-in-effect`만 실행합니다.
 알 수 없는 ID, 중복 ID는 오류입니다. ID 대신 YAML 경로나 Rust 파일 경로를 넘길 수 없습니다.
-Rust 호출부는 `RuleEngine::new(vec![Box::new(MyRule)])` 또는 `rules::select`를 사용합니다.
+Rust 호출부는 `RuleEngine::new(vec![Box::new(MyRule)])` 또는
+`RuleEngine::new(rules::select(&ids)?)`를 사용합니다. `rules::select`와 `rules::default_rules`는
+룰 목록만 반환하므로 `rules`는 엔진을 참조하지 않습니다.
 
 ## 분석과 규칙 실행
 
-`src/analyzer/`는 다른 프로젝트 모듈에 의존하지 않습니다. `ChangedFile`의 현재 소스를
+`crates/analyzer/`는 다른 프로젝트 crate에 의존하지 않습니다. `ChangedFile`의 현재 소스를
 파싱해 실제 Oxc AST, 문법 오류, 변경 메타데이터를 반환하며 규칙이나 모델을 실행하지 않습니다.
 파일 선택과 분석·규칙 실행의 연결은 CLI 등 호출부가 담당합니다.
 
 엔진은 `RuleInput`을 받아 `Rule`을 실행하고 `RuleCheck`를 반환합니다.
-프로젝트 모듈 중 `rules::contract`에만 의존하며, 분석기와 AI 클라이언트는 호출부가 별도로 구성합니다.
+프로젝트 crate 중 `ai-lint-rule-contract`에만 의존하며, 분석기와 AI 클라이언트는 호출부가 별도로 구성합니다.
 `contract`는 구체적인 룰이나 AI 모듈을 참조하지 않습니다.
-`src/rule_engine/`의 `mod.rs`는 엔진 실행, `types.rs`는 `RuleInput`·`RuleCheck`,
-`tests.rs`는 엔진 테스트를 담당합니다. 공개 경로는 `ai_lint::rule_engine::{RuleEngine, RuleInput, RuleCheck}`입니다.
+`crates/rule-engine/src/`의 `lib.rs`는 엔진 실행, `types.rs`는 `RuleInput`·`RuleCheck`,
+`tests.rs`는 엔진 테스트를 담당합니다. 직접 사용하는 경로는 `ai_lint_rule_engine`이며,
+루트도 `ai_lint::rule_engine::{RuleEngine, RuleInput, RuleCheck}`로 재공개합니다.
 AST·경로·변경 메타데이터를 입력받으므로 다른 파서 호출부에서도 직접 사용할 수 있습니다.
-`src/pipeline.rs`의 `From<&AnalyzedFile>` 구현이 두 모듈의 데이터 변환을 담당합니다.
-분석기와 엔진은 각각 자신의 변경 메타데이터 타입을 소유하며, `RuleContext`도 엔진 쪽 타입만 사용합니다.
+`src/pipeline.rs`의 `rule_input(&AnalyzedFile)` 함수가 두 crate의 데이터 변환을 담당합니다.
+분석기와 룰 계약은 각각 자신의 변경 메타데이터 타입을 소유하며, 엔진과 `RuleContext`는 계약 쪽 타입을 사용합니다.
 AST는 빌려서 전달하므로 변환 과정에서 복사하거나 다시 파싱하지 않습니다.
 
 ```rust
 use ai_lint::{
     analyzer::{Allocator, Analyzer, ChangedFile},
-    rule_engine::RuleInput,
+    pipeline::rule_input,
+    rule_engine::RuleEngine,
     rules::{self, ai_model::{ModelClient, evaluate_reviews}},
 };
 
 fn check_example(model: Option<&dyn ModelClient>) -> Result<(), Box<dyn std::error::Error>> {
     let file = ChangedFile::new("example.ts", "alert(2);")
         .with_previous_source("alert(1);");
-    let engine = rules::select(&["no-alert".into()])?;
+    let engine = RuleEngine::new(rules::select(&["no-alert".into()])?);
     let (syntax_errors, check) = {
         let allocator = Allocator::default();
         let analyzed = Analyzer::analyze(&allocator, &file)?;
-        let input = RuleInput::from(&analyzed);
+        let input = rule_input(&analyzed);
         let check = engine.check(input)?;
         (analyzed.syntax_errors, check)
     };
@@ -265,7 +271,8 @@ target/release/ai-lint check --rules no-query-hook-mocking src/example.test.tsx
 
 ## AI 판단
 
-AI 모델 호출은 `src/rules/ai_model.rs`가 담당합니다. 공개 경로는 `ai_lint::rules::ai_model`이며,
+AI 모델 호출은 `crates/rules/src/ai_model.rs`가 담당합니다. 공개 경로는 `ai_lint_rules::ai_model`이며,
+루트의 `ai_lint::rules::ai_model`로도 접근할 수 있습니다.
 모델 설정, 요청·응답 타입, HTTP 클라이언트와 `evaluate_reviews`를 제공합니다.
 `main`이 모델 클라이언트를 소유하고, 엔진 검사 후 추가 판단 요청을 평가해 결과를 합칩니다.
 

@@ -123,11 +123,12 @@ test('Stop ignores committed violations and checks staged, unstaged and untracke
   assert.equal((await handleHook(config, { hook_event_name: 'Stop' })).decision, 'block');
   await writeFile(join(config.workspace, 'src/changed.ts'), good);
   assert.deepEqual(await handleHook(config, { hook_event_name: 'Stop' }), {}); // Current file contents, not index contents.
-  await writeFile(join(config.workspace, 'src/new\nfile.ts'), bad);
+  const unusualName = process.platform === 'win32' ? 'new 한글 file.ts' : 'new\nfile.ts';
+  await writeFile(join(config.workspace, 'src', unusualName), bad);
   result = await handleHook(config, { hook_event_name: 'Stop' });
   assert.equal(result.decision, 'block');
-  assert.ok(result.reason.includes('new\nfile.ts'));
-  await rm(join(config.workspace, 'src/new\nfile.ts'));
+  assert.ok(result.reason.includes(unusualName));
+  await rm(join(config.workspace, 'src', unusualName));
   await rm(join(config.workspace, 'src/file with spaces.tsx'));
   assert.deepEqual(await handleHook(config, { hook_event_name: 'Stop' }), {});
 });

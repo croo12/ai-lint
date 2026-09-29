@@ -1,5 +1,5 @@
 use super::{RuleEngine, RuleInput};
-use crate::rules::contract::{ChangeKind, ChangeMetadata, ChangedRange, Rule, RuleContext};
+use ai_lint_rule_contract::{ChangeKind, ChangeMetadata, ChangedRange, Rule, RuleContext};
 use oxc_allocator::Allocator;
 use oxc_parser::Parser;
 use oxc_semantic::Semantic;

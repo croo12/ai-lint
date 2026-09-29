@@ -98,7 +98,8 @@ pub struct RuleContext<'a> {
 }
 
 impl<'a> RuleContext<'a> {
-    pub(crate) fn new(
+    /// Create a context for one rule invocation and collect its owned results.
+    pub fn new(
         rule_id: &'a str,
         file_path: Option<&'a Path>,
         changes: &'a ChangeMetadata,

@@ -1,6 +1,6 @@
 pub mod ai_model;
 mod ast_helpers;
-pub mod contract;
+pub use ai_lint_rule_contract as contract;
 
 pub mod contextual_effect;
 pub mod no_alert;
@@ -13,11 +13,8 @@ pub mod no_unsafe_type_assertions;
 pub mod no_useless_comments;
 pub mod no_wildcard_export;
 pub mod prefer_functional_transforms;
-#[cfg(test)]
-mod tests;
 
 use self::contract::Rule;
-use crate::rule_engine::RuleEngine;
 
 pub const IDS: &[&str] = &[
     "no-set-state-in-effect",
@@ -33,7 +30,7 @@ pub const IDS: &[&str] = &[
     "no-forward-ref",
 ];
 
-pub fn select(ids: &[String]) -> Result<RuleEngine, String> {
+pub fn select(ids: &[String]) -> Result<Vec<Box<dyn Rule>>, String> {
     let mut seen = std::collections::HashSet::new();
     let mut rules: Vec<Box<dyn Rule>> = Vec::new();
     for id in ids {
@@ -63,8 +60,8 @@ pub fn select(ids: &[String]) -> Result<RuleEngine, String> {
             }
         });
     }
-    Ok(RuleEngine::new(rules))
+    Ok(rules)
 }
-pub fn default_engine() -> RuleEngine {
-    RuleEngine::new(vec![Box::new(no_set_state_in_effect::NoSetStateInEffect)])
+pub fn default_rules() -> Vec<Box<dyn Rule>> {
+    vec![Box::new(no_set_state_in_effect::NoSetStateInEffect)]
 }

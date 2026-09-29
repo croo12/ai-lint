@@ -6,11 +6,52 @@ version = 4
 name = "ai-lint"
 version = "0.1.0"
 dependencies = [
+ "ai-lint-analyzer",
+ "ai-lint-rule-engine",
+ "ai-lint-rules",
  "clap",
- "dotenvy",
+ "oxc_semantic",
+ "oxc_span",
+ "serde_json",
+]
+
+[[package]]
+name = "ai-lint-analyzer"
+version = "0.1.0"
+dependencies = [
  "oxc_allocator",
  "oxc_ast",
  "oxc_parser",
+ "oxc_span",
+]
+
+[[package]]
+name = "ai-lint-rule-contract"
+version = "0.1.0"
+dependencies = [
+ "oxc_semantic",
+ "oxc_span",
+]
+
+[[package]]
+name = "ai-lint-rule-engine"
+version = "0.1.0"
+dependencies = [
+ "ai-lint-rule-contract",
+ "oxc_allocator",
+ "oxc_ast",
+ "oxc_parser",
+ "oxc_semantic",
+ "oxc_span",
+]
+
+[[package]]
+name = "ai-lint-rules"
+version = "0.1.0"
+dependencies = [
+ "ai-lint-rule-contract",
+ "dotenvy",
+ "oxc_ast",
  "oxc_semantic",
  "oxc_span",
  "reqwest",

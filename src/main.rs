@@ -5,6 +5,7 @@ use std::{
 
 use ai_lint::{
     analyzer::{Allocator, Analyzer, ChangedFile},
+    pipeline::rule_input,
     rule_engine::RuleEngine,
     rules::{
         self,
@@ -153,15 +154,18 @@ fn configured_services(
     env_file: &Path,
     rule_ids: &[String],
 ) -> Result<CheckServices, Box<dyn std::error::Error>> {
-    let engine = if rule_ids.is_empty() {
-        rules::default_engine()
+    let selected_rules = if rule_ids.is_empty() {
+        rules::default_rules()
     } else {
         rules::select(rule_ids)?
     };
     let model = ModelConfig::load(env_file)?
         .map(OpenAiCompatibleClient::new)
         .transpose()?;
-    Ok(CheckServices { engine, model })
+    Ok(CheckServices {
+        engine: RuleEngine::new(selected_rules),
+        model,
+    })
 }
 
 fn check_file(path: &Path, services: &CheckServices) -> Result<usize, String> {
@@ -200,7 +204,7 @@ fn analyze_and_check_file(path: &Path, services: &CheckServices) -> Result<Check
         let analyzed = Analyzer::analyze(&allocator, &file).map_err(|error| error.to_string())?;
         let check = services
             .engine
-            .check((&analyzed).into())
+            .check(rule_input(&analyzed))
             .map_err(|error| format!("rule evaluation failed: {error}"))?;
         (analyzed.syntax_errors, check)
     };

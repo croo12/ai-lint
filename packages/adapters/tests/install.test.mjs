@@ -111,7 +111,10 @@ test('global Claude installer targets user settings and preserves them on repeat
 test('global Codex installer targets user hooks and preserves existing settings', async t => {
   const options = await fixture(t);
   const args = [entry, 'install', '--global', '--agent', 'codex', '--bin', binary, '--rules', 'no-useless-comments'];
-  const result = spawnSync(process.execPath, args, { env: { ...process.env, HOME: options.workspace }, encoding: 'utf8' });
+  const result = spawnSync(process.execPath, args, {
+    env: { ...process.env, USERPROFILE: options.workspace, HOME: options.workspace },
+    encoding: 'utf8', windowsHide: true,
+  });
   assert.equal(result.status, 0, result.stderr);
   assert.deepEqual((await json(join(options.workspace, '.codex/ai-lint/adapter.json'))).ruleIds, ['no-useless-comments']);
   assert.equal((await json(join(options.workspace, '.codex/hooks.json'))).hooks.Stop.length, 1);

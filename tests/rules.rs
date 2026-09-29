@@ -1,9 +1,16 @@
-use super::ai_model::{
-    Decision, ModelClient, ModelError, ModelJudgment, ModelRequest, evaluate_reviews,
+use ai_lint::{
+    analyzer::{Allocator, Analyzer, ChangedFile},
+    pipeline::rule_input,
+    rule_engine::RuleEngine,
+    rules::{
+        IDS,
+        ai_model::{
+            Decision, ModelClient, ModelError, ModelJudgment, ModelRequest, evaluate_reviews,
+        },
+        contract::{Rule, RuleContext, RuleScope, RuleViolation},
+        select,
+    },
 };
-use super::contract::{RuleContext, RuleScope, RuleViolation};
-use super::*;
-use crate::analyzer::{Allocator, Analyzer, ChangedFile};
 use oxc_semantic::Semantic;
 use oxc_span::Span;
 
@@ -30,7 +37,7 @@ fn check_source_with_model(
     let (syntax_errors, check) = {
         let allocator = Allocator::default();
         let analyzed = Analyzer::analyze(&allocator, &file).unwrap();
-        let check = engine.check((&analyzed).into()).unwrap();
+        let check = engine.check(rule_input(&analyzed)).unwrap();
         (analyzed.syntax_errors, check)
     };
     let mut rule_violations = check.violations;
@@ -51,7 +58,7 @@ impl ModelClient for Stub {
     }
 }
 fn check(id: &str, source: &str) -> Vec<RuleViolation> {
-    let engine = select(&[id.into()]).unwrap();
+    let engine = RuleEngine::new(select(&[id.into()]).unwrap());
     let result = check_source_with_model("test.tsx", source, &engine, Some(&Stub)).unwrap();
     assert!(
         result.syntax_errors.is_empty(),
@@ -301,7 +308,7 @@ fn useless_comments_report_links_decisions_and_code_explanations_but_allow_descr
 
 #[test]
 fn useless_comments_only_inspects_parser_comments_and_preserves_todo_exceptions() {
-    let engine = select(&["no-useless-comments".into()]).unwrap();
+    let engine = RuleEngine::new(select(&["no-useless-comments".into()]).unwrap());
     for source in [
         "const text = '// TODO';",
         "const text = `/* TODO */`;",
@@ -350,7 +357,7 @@ fn unsafe_type_assertions_require_a_preceding_comment_and_reject_double_assertio
 
 #[test]
 fn wildcard_exports_report_each_declaration_without_a_model() {
-    let engine = select(&["no-wildcard-export".into()]).unwrap();
+    let engine = RuleEngine::new(select(&["no-wildcard-export".into()]).unwrap());
     for export in [
         "export * from 'module';",
         "export type * from 'module';",
@@ -434,7 +441,7 @@ fn model_rules_send_function_context_once_and_preserve_decisions() {
         ),
     ] {
         for decision in [Decision::Pass, Decision::Violation, Decision::Unknown] {
-            let engine = select(&[id.into()]).unwrap();
+            let engine = RuleEngine::new(select(&[id.into()]).unwrap());
             let model = ExpectModel {
                 decision,
                 expected: source.into(),
@@ -450,7 +457,7 @@ fn model_rules_send_function_context_once_and_preserve_decisions() {
 }
 #[test]
 fn no_candidate_skips_model_and_missing_model_is_an_error() {
-    let engine = select(&["prefer-functional-transforms".into()]).unwrap();
+    let engine = RuleEngine::new(select(&["prefer-functional-transforms".into()]).unwrap());
     assert!(
         check_source("test.ts", "const f = xs => xs.map(x => x);", &engine)
             .unwrap()

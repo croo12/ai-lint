@@ -1,7 +1,5 @@
 //! Keep data hooks real in tests; replace network responses with MSW.
 mod facts;
-#[cfg(test)]
-mod tests;
 
 use super::contract::{Rule, RuleContext, RuleScope};
 use facts::{Facts, Hook, argument, is_query_library, member, module_hook_name};

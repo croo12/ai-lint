@@ -1,11 +1,12 @@
-use super::super::contract::RuleViolation;
-use crate::{
+use ai_lint::{
     analyzer::{Allocator, Analyzer, ChangedFile},
-    rules::select,
+    pipeline::rule_input,
+    rule_engine::RuleEngine,
+    rules::{contract::RuleViolation, select},
 };
 
 fn check_file(path: &str, source: &str) -> Vec<RuleViolation> {
-    let engine = select(&["no-query-hook-mocking".into()]).unwrap();
+    let engine = RuleEngine::new(select(&["no-query-hook-mocking".into()]).unwrap());
     let file = ChangedFile::new(path, source);
     let allocator = Allocator::default();
     let result = Analyzer::analyze(&allocator, &file).unwrap();
@@ -14,7 +15,7 @@ fn check_file(path: &str, source: &str) -> Vec<RuleViolation> {
         "{source}: {:?}",
         result.syntax_errors
     );
-    engine.check((&result).into()).unwrap().violations
+    engine.check(rule_input(&result)).unwrap().violations
 }
 fn check(source: &str) -> Vec<RuleViolation> {
     check_file("example.test.tsx", source)

@@ -1,15 +1,40 @@
-[package]
-name = "ai-lint"
+[workspace]
+members = [".", "crates/analyzer", "crates/rule-engine", "crates/rules", "crates/rules/contract"]
+default-members = [".", "crates/analyzer", "crates/rule-engine", "crates/rules", "crates/rules/contract"]
+resolver = "3"
+
+[workspace.package]
 version = "0.1.0"
 edition = "2024"
-description = "A contextual linter for AI coding agents"
 license = "MIT"
+
+[package]
+name = "ai-lint"
+version.workspace = true
+edition.workspace = true
+description = "A contextual linter for AI coding agents"
+license.workspace = true
 
 [[bin]]
 name = "ai-lint"
 path = "src/main.rs"
 
 [dependencies]
+ai-lint-analyzer.workspace = true
+ai-lint-rule-engine.workspace = true
+ai-lint-rules.workspace = true
+clap.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+oxc_semantic.workspace = true
+oxc_span.workspace = true
+
+[workspace.dependencies]
+ai-lint-analyzer = { path = "crates/analyzer" }
+ai-lint-rule-contract = { path = "crates/rules/contract" }
+ai-lint-rule-engine = { path = "crates/rule-engine" }
+ai-lint-rules = { path = "crates/rules" }
 clap = { version = "4.5", features = ["derive"] }
 dotenvy = "0.15"
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }

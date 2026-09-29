@@ -6,26 +6,25 @@ use crate::{
     rules::contract::{ChangeKind, ChangeMetadata, ChangedRange},
 };
 
-impl<'a> From<&'a AnalyzedFile<'a>> for RuleInput<'a> {
-    fn from(analyzed: &'a AnalyzedFile<'a>) -> Self {
-        Self {
-            ast: analyzed.is_valid().then_some(&analyzed.ast),
-            path: analyzed.path,
-            changes: ChangeMetadata {
-                kind: match analyzed.changes.kind {
-                    AnalyzedChangeKind::Unknown => ChangeKind::Unknown,
-                    AnalyzedChangeKind::Added => ChangeKind::Added,
-                    AnalyzedChangeKind::Modified => ChangeKind::Modified,
-                    AnalyzedChangeKind::Unchanged => ChangeKind::Unchanged,
-                },
-                previous_bytes: analyzed.changes.previous_bytes,
-                current_bytes: analyzed.changes.current_bytes,
-                range: analyzed.changes.range.as_ref().map(|range| ChangedRange {
-                    before: range.before.clone(),
-                    after: range.after.clone(),
-                }),
+/// Adapt an analysis result without coupling the analyzer to the rule engine.
+pub fn rule_input<'a>(analyzed: &'a AnalyzedFile<'a>) -> RuleInput<'a> {
+    RuleInput {
+        ast: analyzed.is_valid().then_some(&analyzed.ast),
+        path: analyzed.path,
+        changes: ChangeMetadata {
+            kind: match analyzed.changes.kind {
+                AnalyzedChangeKind::Unknown => ChangeKind::Unknown,
+                AnalyzedChangeKind::Added => ChangeKind::Added,
+                AnalyzedChangeKind::Modified => ChangeKind::Modified,
+                AnalyzedChangeKind::Unchanged => ChangeKind::Unchanged,
             },
-        }
+            previous_bytes: analyzed.changes.previous_bytes,
+            current_bytes: analyzed.changes.current_bytes,
+            range: analyzed.changes.range.as_ref().map(|range| ChangedRange {
+                before: range.before.clone(),
+                after: range.after.clone(),
+            }),
+        },
     }
 }
 
@@ -82,7 +81,7 @@ mod tests {
         ] {
             let allocator = Allocator::default();
             let analyzed = Analyzer::analyze(&allocator, &file).unwrap();
-            let input = RuleInput::from(&analyzed);
+            let input = rule_input(&analyzed);
             assert!(std::ptr::eq(input.ast.unwrap(), &analyzed.ast));
             assert_eq!(input.path, analyzed.path);
             assert_eq!(input.changes.kind, expected_kind);
@@ -117,7 +116,7 @@ mod tests {
         let allocator = Allocator::default();
         let analyzed = Analyzer::analyze(&allocator, &file).unwrap();
         let engine = RuleEngine::new(vec![Box::new(ChangeAwareRule)]);
-        let violations = engine.check((&analyzed).into()).unwrap().violations;
+        let violations = engine.check(rule_input(&analyzed)).unwrap().violations;
         assert_eq!(violations.len(), 1);
         assert_eq!(violations[0].span, Span::new(6, 7));
     }
@@ -128,8 +127,8 @@ mod tests {
         let allocator = Allocator::default();
         let analyzed = Analyzer::analyze(&allocator, &file).unwrap();
         for id in ["no-alert", "no-console-log"] {
-            let engine = rules::select(&[id.into()]).unwrap();
-            let violations = engine.check((&analyzed).into()).unwrap().violations;
+            let engine = RuleEngine::new(rules::select(&[id.into()]).unwrap());
+            let violations = engine.check(rule_input(&analyzed)).unwrap().violations;
             assert_eq!(violations.len(), 1);
             assert_eq!(violations[0].rule_id, id);
         }
@@ -157,7 +156,7 @@ mod tests {
             if analyzed.syntax_errors.is_empty() {
                 analyzed.panicked = true;
             }
-            let check = engine.check((&analyzed).into()).unwrap();
+            let check = engine.check(rule_input(&analyzed)).unwrap();
             assert!(check.violations.is_empty());
             assert!(check.reviews.is_empty());
         }
@@ -169,8 +168,8 @@ mod tests {
             .with_previous_source("alert(1); const value = 1;");
         let allocator = Allocator::default();
         let analyzed = Analyzer::analyze(&allocator, &file).unwrap();
-        let engine = rules::select(&["no-alert".into()]).unwrap();
-        let violations = engine.check((&analyzed).into()).unwrap().violations;
+        let engine = RuleEngine::new(rules::select(&["no-alert".into()]).unwrap());
+        let violations = engine.check(rule_input(&analyzed)).unwrap().violations;
         assert_eq!(violations.len(), 1);
         assert!(violations[0].span.end as usize <= analyzed.changes.range.unwrap().after.start);
     }

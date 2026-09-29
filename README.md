@@ -42,11 +42,12 @@ Rust CLI는 저장소 루트에서 Cargo로 관리하고, 웹 프로젝트는 np
 
 ```text
 ai-lint/
-├── src/          Rust CLI·분석 엔진
-├── src/analyzer/ 변경 파일 파싱·변경 메타데이터 (독립 모듈)
-├── src/rule_engine/ 규칙 실행·입출력 타입
-├── src/rules/    컴파일되는 Rust 규칙
-├── tests/        Rust 테스트
+├── src/                  Rust CLI·crate 연결 코드
+├── crates/analyzer/      변경 파일 파싱·변경 메타데이터
+├── crates/rule-engine/   규칙 실행·입출력 타입
+├── crates/rules/         컴파일되는 Rust 규칙·AI 판단
+│   └── contract/         공통 룰 계약 crate
+├── tests/                CLI·crate 통합·의존성 경계 테스트
 └── apps/web/     React + TypeScript 플레이그라운드
     ├── src/      코드 편집기·규칙 목록·결과 화면
     └── server/   로컬 CLI 실행 API
@@ -88,26 +89,34 @@ cargo run -- check src/App.tsx
 종료 코드는 정상 `0`, 문법 오류 또는 규칙 위반 `1`, 파일 읽기 등의 실행 오류 `2`입니다.
 진단 위치의 `start..end`는 UTF-8 바이트 범위이며 끝 위치는 포함하지 않습니다.
 
-## 모듈
+## Crate 경계
 
-- `analyzer/`: 변경 파일을 입력받아 AST·문법 오류·변경 메타데이터 반환. 다른 프로젝트 모듈을 참조하지 않음
-- `rule_engine/`: `RuleInput`을 받아 등록된 규칙 실행 및 위반·추가 판단 요청 수집. 프로젝트 모듈 중 `rules::contract`만 참조
-- `pipeline`: 분석 반환값을 엔진 입력으로 변환하는 연결 코드
-- `rules`: 규칙별 Rust 구현과 ID 레지스트리
-- `rules/contract`: 공통 `Rule` 인터페이스, 변경 메타데이터, 진단·추가 판단 요청 수집용 문맥, `RuleViolation`·`ReviewRequest`
-- `rules/ai_model`: AI 모델 호출 설정·HTTP 클라이언트, 추가 판단 요청 평가 및 응답을 위반 결과로 변환
-- `rules/ast_helpers`: 룰 내부에서 공유하는 AST 탐색·바인딩 도구
+Cargo workspace의 루트 앱과 4개 라이브러리 crate로 구성합니다.
+
+| Crate | 역할 | 프로젝트 내부 의존성 |
+| --- | --- | --- |
+| `ai-lint` | CLI, `pipeline`, 구성과 실행 순서 관리 | analyzer, rule-engine, rules |
+| `ai-lint-analyzer` | AST·문법 오류·변경 메타데이터 반환 | 없음 |
+| `ai-lint-rule-contract` | `Rule`, `RuleContext`, 변경 메타데이터, 진단·추가 판단 요청 타입 | 없음 |
+| `ai-lint-rule-engine` | 입력 AST에 룰을 실행하고 결과 수집 | rule-contract |
+| `ai-lint-rules` | 룰 구현·ID 선택·AI 판단·내부 AST 탐색 도구 | rule-contract |
+
+각 crate는 선언된 의존성만 참조할 수 있습니다. `tests/architecture.rs`는 Cargo 의존성 선언에도
+위 경계를 적용하며 개발·빌드 의존성도 검사합니다. 여러 crate를 사용하는 통합 테스트는 루트에 둡니다.
+`cargo test --locked`는 기본적으로 모든 workspace crate를 검사합니다.
+결정 배경은 [crate 분리 ADR](docs/adr/0003-crate-boundaries.md)에 있습니다.
 
 호출부가 `ChangedFile`과 `Allocator`를 소유하고 `Analyzer::analyze`의 반환값을
 `RuleInput`으로 변환해 `RuleEngine::check`에 전달합니다. 두 모듈은 서로의 타입을 참조하지 않으며
-변환은 `pipeline`의 `From` 구현이 담당합니다. AST는 입력 소스와 allocator를 빌리며,
+변환은 `pipeline::rule_input` 함수가 담당합니다. `rules::select`는 룰 목록을 반환하고
+호출부가 `RuleEngine::new`로 엔진을 생성합니다. AST는 입력 소스와 allocator를 빌리며,
 `RuleCheck`의 위반 결과와 추가 판단 요청은 독립적인 소유권을 가집니다. CLI는 AST를 해제한 뒤
 `rules::ai_model::evaluate_reviews`로 추가 판단 요청을 처리하고 결과를 합칩니다. 모델 클라이언트는 CLI가
 별도로 소유합니다. 사용 예와 변경 메타데이터는 [규칙 작성 가이드](docs/rust-rules.md#분석과-규칙-실행)에 있습니다.
 
 ## Rust 규칙
 
-규칙은 `src/rules/`에서 `Rule` 트레이트로 작성합니다.
+규칙은 `crates/rules/src/`에서 `Rule` 트레이트로 작성합니다.
 [규칙 작성 가이드](docs/rust-rules.md)에 새 규칙 추가와 hook 이전 방법을 정리했습니다.
 
 ```sh

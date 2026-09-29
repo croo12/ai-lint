@@ -59,7 +59,7 @@ fn invalid_syntax_still_returns_change_metadata_and_diagnostics() {
 #[test]
 fn reads_a_snapshot_and_reports_input_errors() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let path = root.join("tests/fixtures/effect_without_setter.tsx");
+    let path = root.join("tests/fixtures/valid.tsx");
     let file = ChangedFile::read(&path).unwrap();
     assert_eq!(file.path, path);
     assert_eq!(file.previous, PreviousSource::Unknown);

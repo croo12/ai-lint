@@ -6,9 +6,9 @@ import { fileURLToPath } from 'node:url';
 
 const repository = fileURLToPath(new URL('../../../', import.meta.url));
 const catalog = [
-  { id: 'no-set-state-in-effect', name: 'Effect 안의 상태 변경', description: 'useEffect 콜백에 포함된 state setter 호출을 찾습니다.', tag: 'React', file: join(repository, 'src/rules/no_set_state_in_effect.rs') },
-  { id: 'no-console-log', name: '디버깅 로그', description: '코드에 남아 있는 console.log 호출을 찾습니다.', tag: 'Quality', file: join(repository, 'src/rules/no_console_log.rs') },
-  { id: 'no-alert', name: '브라우저 알림', description: 'alert와 window.alert 호출을 찾습니다.', tag: 'UX', file: join(repository, 'src/rules/no_alert.rs') },
+  { id: 'no-set-state-in-effect', name: 'Effect 안의 상태 변경', description: 'useEffect 콜백에 포함된 state setter 호출을 찾습니다.', tag: 'React', file: join(repository, 'crates/rules/src/no_set_state_in_effect.rs') },
+  { id: 'no-console-log', name: '디버깅 로그', description: '코드에 남아 있는 console.log 호출을 찾습니다.', tag: 'Quality', file: join(repository, 'crates/rules/src/no_console_log.rs') },
+  { id: 'no-alert', name: '브라우저 알림', description: 'alert와 window.alert 호출을 찾습니다.', tag: 'UX', file: join(repository, 'crates/rules/src/no_alert.rs') },
 ];
 
 function respond(res, status, body) {

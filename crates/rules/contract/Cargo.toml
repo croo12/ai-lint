@@ -1,0 +1,10 @@
+[package]
+name = "ai-lint-rule-contract"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Rule interfaces and evaluation data shared by ai-lint rules and engines"
+
+[dependencies]
+oxc_semantic.workspace = true
+oxc_span.workspace = true

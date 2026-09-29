@@ -1,4 +1,4 @@
-use crate::rules::contract::{ChangeMetadata, ReviewRequest, RuleViolation};
+use ai_lint_rule_contract::{ChangeMetadata, ReviewRequest, RuleViolation};
 use oxc_ast::ast::Program;
 use std::path::Path;
 

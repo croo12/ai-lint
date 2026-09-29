@@ -1,0 +1,16 @@
+[package]
+name = "ai-lint-rule-engine"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Rule execution over caller-provided ASTs"
+
+[dependencies]
+ai-lint-rule-contract.workspace = true
+oxc_ast.workspace = true
+oxc_semantic.workspace = true
+
+[dev-dependencies]
+oxc_allocator.workspace = true
+oxc_parser.workspace = true
+oxc_span.workspace = true

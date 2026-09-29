@@ -1,0 +1,12 @@
+[package]
+name = "ai-lint-analyzer"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Independent source parsing and change metadata for ai-lint"
+
+[dependencies]
+oxc_allocator.workspace = true
+oxc_ast.workspace = true
+oxc_parser.workspace = true
+oxc_span.workspace = true

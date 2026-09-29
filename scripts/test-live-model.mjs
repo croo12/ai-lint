@@ -13,7 +13,7 @@ for (const [name, expected] of [['pass', 0], ['violation', 1], ['no-candidate', 
   const result = await new Promise((accept, reject) => {
     execFile(binary, ['check', '--format', 'json', '--env-file', join(root, '.env'),
       '--rules', 'contextual-effect',
-      join(root, `tests/fixtures/live-model/${name}.tsx`)],
+      join(root, `apps/cli/tests/fixtures/live-model/${name}.tsx`)],
     { cwd: root, windowsHide: true, timeout: 45000, maxBuffer: 1024 * 1024 }, (error, stdout) => {
       if (error && ![1, 2].includes(error.code)) return reject(error);
       try { accept({ code: error?.code ?? 0, report: JSON.parse(stdout) }); } catch (error) { reject(error); }

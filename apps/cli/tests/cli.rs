@@ -15,7 +15,7 @@ fn cli() -> Command {
     command
         .arg("check")
         .arg("--env-file")
-        .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join(".env.example"));
+        .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../.env.example"));
     command
 }
 

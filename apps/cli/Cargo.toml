@@ -1,0 +1,21 @@
+[package]
+name = "ai-lint"
+version.workspace = true
+edition.workspace = true
+description = "A contextual linter for AI coding agents"
+license.workspace = true
+
+[[bin]]
+name = "ai-lint"
+path = "src/main.rs"
+
+[dependencies]
+ai-lint-analyzer.workspace = true
+ai-lint-rule-engine.workspace = true
+ai-lint-rules.workspace = true
+clap.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+oxc_semantic.workspace = true
+oxc_span.workspace = true

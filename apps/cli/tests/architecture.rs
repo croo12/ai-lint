@@ -1,7 +1,7 @@
 use std::{collections::BTreeSet, process::Command};
 
 /// Covers normal, build, and dev dependencies, including renamed dependencies.
-/// Integration tests belong in the root package so they cannot open back doors
+/// Integration tests belong in the CLI app so they cannot open back doors
 /// between otherwise independent crates.
 #[test]
 fn workspace_dependencies_preserve_architecture_boundaries() {
@@ -14,7 +14,7 @@ fn workspace_dependencies_preserve_architecture_boundaries() {
             "--locked",
             "--offline",
         ])
-        .current_dir(env!("CARGO_MANIFEST_DIR"))
+        .current_dir(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../.."))
         .output()
         .expect("cargo metadata must run");
     assert!(

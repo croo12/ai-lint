@@ -37,21 +37,33 @@ JSON에는 `schemaVersion`, `exitCode`, 파일별 `syntaxErrors`·`violations`, 
 
 ## 프로젝트 구성과 웹 플레이그라운드
 
-Rust CLI는 저장소 루트에서 Cargo로 관리하고, 웹 프로젝트는 npm workspaces의
-`apps/web`에서 관리합니다. Rust CLI와 Rust 규칙을 웹에서도 그대로 사용합니다.
+폴더는 역할을 기준으로 나눕니다. `apps/`에는 실행 앱, `packages/`에는 재사용 모듈을 두며,
+예제와 테스트는 해당 앱·패키지 안에 둡니다. Rust 패키지는 `Cargo.toml`,
+TypeScript 패키지는 `package.json`으로 관리합니다.
 
 ```text
 ai-lint/
-├── src/                  Rust CLI·crate 연결 코드
-├── crates/analyzer/      변경 파일 파싱·변경 메타데이터
-├── crates/rule-engine/   규칙 실행·입출력 타입
-├── crates/rules/         컴파일되는 Rust 규칙·AI 판단
-│   └── contract/         공통 룰 계약 crate
-├── tests/                CLI·crate 통합·의존성 경계 테스트
-└── apps/web/     React + TypeScript 플레이그라운드
-    ├── src/      코드 편집기·규칙 목록·결과 화면
-    └── server/   로컬 CLI 실행 API
+├── apps/
+│   ├── cli/               Rust CLI·전체 실행 조합
+│   │   ├── src/           main·pipeline·공개 라이브러리 경로
+│   │   ├── tests/         CLI·crate 통합·의존성 경계 테스트
+│   │   └── examples/      Rust 사용 예제
+│   └── web/               React + TypeScript 플레이그라운드
+├── packages/
+│   ├── analyzer/          변경 파일 파싱·변경 메타데이터
+│   ├── rule-contract/     공통 룰 계약 crate
+│   ├── rule-engine/       규칙 실행·입출력 타입
+│   ├── rules/             규칙 구현·AI 판단
+│   └── adapters/          TypeScript hook 라이브러리
+│       └── examples/      hook 연결·설정 예제
+├── docs/                  작성 가이드·아키텍처 결정
+├── scripts/               저장소 검증 스크립트
+├── Cargo.toml             Rust workspace 설정
+└── package.json           npm workspace 설정·공통 실행 명령
 ```
+
+명령은 저장소 루트에서 실행합니다. Cargo와 npm은 각각 명시된 멤버만 관리하며,
+Rust 빌드 결과는 루트 `target/`에 모입니다. 웹에서도 같은 Rust CLI와 규칙을 사용합니다.
 
 ```sh
 npm install
@@ -91,7 +103,7 @@ cargo run -- check src/App.tsx
 
 ## Crate 경계
 
-Cargo workspace의 루트 앱과 4개 라이브러리 crate로 구성합니다.
+Cargo workspace의 `apps/cli` 앱과 4개 라이브러리 crate로 구성합니다.
 
 | Crate | 역할 | 프로젝트 내부 의존성 |
 | --- | --- | --- |
@@ -101,8 +113,8 @@ Cargo workspace의 루트 앱과 4개 라이브러리 crate로 구성합니다.
 | `ai-lint-rule-engine` | 입력 AST에 룰을 실행하고 결과 수집 | rule-contract |
 | `ai-lint-rules` | 룰 구현·ID 선택·AI 판단·내부 AST 탐색 도구 | rule-contract |
 
-각 crate는 선언된 의존성만 참조할 수 있습니다. `tests/architecture.rs`는 Cargo 의존성 선언에도
-위 경계를 적용하며 개발·빌드 의존성도 검사합니다. 여러 crate를 사용하는 통합 테스트는 루트에 둡니다.
+각 crate는 선언된 의존성만 참조할 수 있습니다. `apps/cli/tests/architecture.rs`는 Cargo 의존성 선언에도
+위 경계를 적용하며 개발·빌드 의존성도 검사합니다. 여러 crate를 사용하는 통합 테스트는 `apps/cli/tests/`에 둡니다.
 `cargo test --locked`는 기본적으로 모든 workspace crate를 검사합니다.
 결정 배경은 [crate 분리 ADR](docs/adr/0003-crate-boundaries.md)에 있습니다.
 
@@ -116,7 +128,7 @@ Cargo workspace의 루트 앱과 4개 라이브러리 crate로 구성합니다.
 
 ## Rust 규칙
 
-규칙은 `crates/rules/src/`에서 `Rule` 트레이트로 작성합니다.
+규칙은 `packages/rules/src/`에서 `Rule` 트레이트로 작성합니다.
 [규칙 작성 가이드](docs/rust-rules.md)에 새 규칙 추가와 hook 이전 방법을 정리했습니다.
 
 ```sh

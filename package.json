@@ -1,7 +1,7 @@
 {
   "name": "ai-lint-workspace",
   "private": true,
-  "workspaces": ["apps/*", "packages/*"],
+  "workspaces": ["apps/web", "packages/adapters"],
   "scripts": {
     "dev": "npm run dev --workspace @ai-lint/web",
     "build:web": "npm run build --workspace @ai-lint/web",

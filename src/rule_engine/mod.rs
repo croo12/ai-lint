@@ -1,17 +1,15 @@
 //! Executes compiled Rust rules over one shared semantic AST per source file.
+
+mod types;
+
+pub use types::{RuleCheck, RuleInput};
+
 use crate::{
-    model::{Decision, ModelClient, ModelError, ModelRequest},
+    model::{Decision, ModelClient, ModelError},
     rule::{Rule, RuleContext, RuleViolation},
 };
-use oxc_ast::ast::Program;
 use oxc_semantic::SemanticBuilder;
-use std::path::Path;
 
-#[derive(Default)]
-pub struct RuleCheck {
-    pub violations: Vec<RuleViolation>,
-    pub model_requests: Vec<ModelRequest>,
-}
 #[derive(Default)]
 pub struct RuleEngine {
     rules: Vec<Box<dyn Rule>>,
@@ -25,18 +23,13 @@ impl RuleEngine {
         self.model = Some(model);
         self
     }
-    pub fn check(&self, program: &Program<'_>) -> Result<RuleCheck, String> {
-        self.check_with_path(program, None)
-    }
-    pub fn check_file(&self, program: &Program<'_>, path: &Path) -> Result<RuleCheck, String> {
-        self.check_with_path(program, Some(path))
-    }
-    fn check_with_path(
-        &self,
-        program: &Program<'_>,
-        path: Option<&Path>,
-    ) -> Result<RuleCheck, String> {
+    /// Evaluate the parsed snapshot without reparsing it. Rules still inspect
+    /// the whole file; each rule may use change metadata to refine its policy.
+    pub fn check(&self, input: RuleInput<'_>) -> Result<RuleCheck, String> {
         let mut check = RuleCheck::default();
+        let Some(program) = input.ast else {
+            return Ok(check);
+        };
         if self.rules.is_empty() {
             return Ok(check);
         }
@@ -45,12 +38,13 @@ impl RuleEngine {
             return Err(format!("semantic analysis failed: {:?}", built.diagnostics));
         }
         for rule in &self.rules {
-            if !rule.scope().includes(path) {
+            if !rule.scope().includes(Some(input.path)) {
                 continue;
             }
             let mut context = RuleContext::new(
                 rule.id(),
-                path,
+                Some(input.path),
+                &input.changes,
                 &mut check.violations,
                 &mut check.model_requests,
             );
@@ -79,3 +73,6 @@ impl RuleEngine {
         Ok(check.violations)
     }
 }
+
+#[cfg(test)]
+mod tests;

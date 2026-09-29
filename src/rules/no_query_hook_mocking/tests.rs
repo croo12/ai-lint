@@ -1,14 +1,22 @@
-use crate::{analyzer::Analyzer, rule::RuleViolation, rules::select};
+use crate::{
+    analyzer::{Allocator, Analyzer, ChangedFile},
+    rule::RuleViolation,
+    rules::select,
+};
 
 fn check_file(path: &str, source: &str) -> Vec<RuleViolation> {
     let engine = select(&["no-query-hook-mocking".into()]).unwrap();
-    let result = Analyzer::analyze_source_with_rules(path, source, &engine).unwrap();
+    let file = ChangedFile::new(path, source);
+    let allocator = Allocator::default();
+    let result = Analyzer::analyze(&allocator, &file).unwrap();
     assert!(
         result.syntax_errors.is_empty(),
         "{source}: {:?}",
         result.syntax_errors
     );
-    result.rule_violations
+    engine
+        .resolve(engine.check((&result).into()).unwrap())
+        .unwrap()
 }
 fn check(source: &str) -> Vec<RuleViolation> {
     check_file("example.test.tsx", source)

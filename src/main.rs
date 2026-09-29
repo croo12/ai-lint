@@ -3,9 +3,10 @@ use std::{
     process::ExitCode,
 };
 
-use ai_lint::analyzer::Analyzer;
 use ai_lint::{
+    analyzer::{Allocator, Analyzer, ChangedFile},
     model::{ModelConfig, OpenAiCompatibleClient},
+    rule::RuleViolation,
     rule_engine::RuleEngine,
     rules,
 };
@@ -106,7 +107,7 @@ fn run_check_json(args: CheckArgs) -> ExitCode {
         Err(error) => errors.push(error.to_string()),
         Ok(engine) => {
             for path in &args.files {
-                match Analyzer::analyze_file_with_rules(path, &engine) {
+                match analyze_and_check_file(path, &engine) {
                     Err(error) => errors.push(format!("{}: {error}", path.display())),
                     Ok(analyzed) => {
                         findings += analyzed.syntax_errors.len() + analyzed.rule_violations.len();
@@ -157,7 +158,7 @@ fn configured_engine(
 }
 
 fn check_file(path: &Path, engine: &RuleEngine) -> Result<usize, String> {
-    let analyzed = Analyzer::analyze_file_with_rules(path, engine)
+    let analyzed = analyze_and_check_file(path, engine)
         .map_err(|error| format!("{}: {error}", path.display()))?;
 
     for diagnostic in &analyzed.syntax_errors {
@@ -178,24 +179,30 @@ fn check_file(path: &Path, engine: &RuleEngine) -> Result<usize, String> {
     Ok(analyzed.syntax_errors.len() + analyzed.rule_violations.len())
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+struct CheckedFile {
+    source: String,
+    syntax_errors: Vec<String>,
+    rule_violations: Vec<RuleViolation>,
+}
 
-    #[test]
-    fn accepts_valid_typescript() {
-        let analyzed = Analyzer::analyze_source("test.ts", "const greeting: string = 'hello';")
-            .expect("valid TypeScript should be analyzed");
-
-        assert!(analyzed.syntax_errors.is_empty());
-        assert!(analyzed.ast_debug.contains("VariableDeclaration"));
-    }
-
-    #[test]
-    fn reports_invalid_typescript() {
-        let analyzed = Analyzer::analyze_source("test.ts", "const greeting: = 'hello';")
-            .expect("invalid TypeScript should still be analyzed");
-
-        assert!(!analyzed.syntax_errors.is_empty());
-    }
+/// The CLI composes analysis and evaluation, retaining only owned data for output.
+fn analyze_and_check_file(path: &Path, engine: &RuleEngine) -> Result<CheckedFile, String> {
+    let file = ChangedFile::read(path).map_err(|error| error.to_string())?;
+    let (syntax_errors, check) = {
+        let allocator = Allocator::default();
+        let analyzed = Analyzer::analyze(&allocator, &file).map_err(|error| error.to_string())?;
+        let check = engine
+            .check((&analyzed).into())
+            .map_err(|error| format!("rule evaluation failed: {error}"))?;
+        (analyzed.syntax_errors, check)
+    };
+    // No AST or allocator is retained while the model processes owned requests.
+    let rule_violations = engine
+        .resolve(check)
+        .map_err(|error| format!("model evaluation failed: {error}"))?;
+    Ok(CheckedFile {
+        source: file.source,
+        syntax_errors,
+        rule_violations,
+    })
 }

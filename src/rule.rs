@@ -3,7 +3,32 @@
 use crate::model::ModelRequest;
 use oxc_semantic::Semantic;
 use oxc_span::Span;
-use std::path::Path;
+use std::{ops::Range, path::Path};
+
+/// Change information understood by rules, independent of the source analyzer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChangeKind {
+    Unknown,
+    Added,
+    Modified,
+    Unchanged,
+}
+
+/// UTF-8 byte ranges enclosing the edits; ends are exclusive.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChangedRange {
+    pub before: Range<usize>,
+    pub after: Range<usize>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChangeMetadata {
+    pub kind: ChangeKind,
+    pub previous_bytes: Option<usize>,
+    pub current_bytes: usize,
+    /// None when contents are unchanged or the baseline is unavailable.
+    pub range: Option<ChangedRange>,
+}
 
 /// Selects the files a rule runs on. The engine skips a rule outside its scope,
 /// so the rule body never repeats the file name condition.
@@ -56,6 +81,7 @@ pub struct RuleViolation {
 pub struct RuleContext<'a> {
     rule_id: &'a str,
     file_path: Option<&'a Path>,
+    changes: &'a ChangeMetadata,
     violations: &'a mut Vec<RuleViolation>,
     model_requests: &'a mut Vec<ModelRequest>,
 }
@@ -64,12 +90,14 @@ impl<'a> RuleContext<'a> {
     pub(crate) fn new(
         rule_id: &'a str,
         file_path: Option<&'a Path>,
+        changes: &'a ChangeMetadata,
         violations: &'a mut Vec<RuleViolation>,
         model_requests: &'a mut Vec<ModelRequest>,
     ) -> Self {
         Self {
             rule_id,
             file_path,
+            changes,
             violations,
             model_requests,
         }
@@ -78,6 +106,10 @@ impl<'a> RuleContext<'a> {
     /// Available when the caller checks a named source file.
     pub fn file_path(&self) -> Option<&Path> {
         self.file_path
+    }
+
+    pub fn changes(&self) -> &ChangeMetadata {
+        self.changes
     }
 
     pub fn report(&mut self, span: Span, message: impl Into<String>) {

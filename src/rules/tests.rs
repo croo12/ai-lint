@@ -1,11 +1,35 @@
 use super::*;
 use crate::{
-    analyzer::{AnalyzeError, Analyzer},
+    analyzer::{Allocator, Analyzer, ChangedFile},
     model::{Decision, ModelClient, ModelError, ModelJudgment, ModelRequest},
     rule::{RuleContext, RuleScope, RuleViolation},
 };
 use oxc_semantic::Semantic;
 use oxc_span::Span;
+
+struct CheckedSource {
+    syntax_errors: Vec<String>,
+    rule_violations: Vec<RuleViolation>,
+}
+
+fn check_source(
+    path: &str,
+    source: &str,
+    engine: &RuleEngine,
+) -> Result<CheckedSource, ModelError> {
+    let file = ChangedFile::new(path, source);
+    let (syntax_errors, check) = {
+        let allocator = Allocator::default();
+        let analyzed = Analyzer::analyze(&allocator, &file).unwrap();
+        let check = engine.check((&analyzed).into()).unwrap();
+        (analyzed.syntax_errors, check)
+    };
+    Ok(CheckedSource {
+        syntax_errors,
+        rule_violations: engine.resolve(check)?,
+    })
+}
+
 struct Stub;
 impl ModelClient for Stub {
     fn judge(&self, _: &ModelRequest) -> Result<ModelJudgment, ModelError> {
@@ -17,7 +41,7 @@ impl ModelClient for Stub {
 }
 fn check(id: &str, source: &str) -> Vec<RuleViolation> {
     let engine = select(&[id.into()]).unwrap().with_model(Box::new(Stub));
-    let result = Analyzer::analyze_source_with_rules("test.tsx", source, &engine).unwrap();
+    let result = check_source("test.tsx", source, &engine).unwrap();
     assert!(
         result.syntax_errors.is_empty(),
         "{:?}",
@@ -51,7 +75,7 @@ fn the_engine_runs_a_rule_only_inside_its_scope() {
         (RuleScope::NonTestFiles, "sample.test.tsx", 0),
     ] {
         let engine = RuleEngine::new(vec![Box::new(ScopedStub(scope))]);
-        let result = Analyzer::analyze_source_with_rules(path, "const x = 1;", &engine).unwrap();
+        let result = check_source(path, "const x = 1;", &engine).unwrap();
         assert_eq!(result.rule_violations.len(), expected, "{scope:?} {path}");
     }
 }
@@ -276,13 +300,13 @@ fn useless_comments_only_inspects_parser_comments_and_preserves_todo_exceptions(
         "/** TODO: 동작을 수정한다. */ const x = 1;",
         "// FIXME\n// HACK\nconst x = 1;",
     ] {
-        let result = Analyzer::analyze_source_with_rules("test.ts", source, &engine).unwrap();
+        let result = check_source("test.ts", source, &engine).unwrap();
         assert!(result.syntax_errors.is_empty(), "{source}");
         assert!(result.rule_violations.is_empty(), "{source}");
     }
     for comment in ["// TODO:", "/* TODO */", "/**\n * TODO:\n */"] {
         let source = format!("const label = '한글';\n{comment}");
-        let result = Analyzer::analyze_source_with_rules("test.ts", &source, &engine).unwrap();
+        let result = check_source("test.ts", &source, &engine).unwrap();
         assert_eq!(result.rule_violations.len(), 1, "{comment}");
         let span = result.rule_violations[0].span;
         assert_eq!(&source[span.start as usize..span.end as usize], comment);
@@ -323,7 +347,7 @@ fn wildcard_exports_report_each_declaration_without_a_model() {
         "export type * as types from 'module';",
     ] {
         let source = format!("// 한글\n{export}");
-        let result = Analyzer::analyze_source_with_rules("index.ts", &source, &engine).unwrap();
+        let result = check_source("index.ts", &source, &engine).unwrap();
         assert!(result.syntax_errors.is_empty(), "{export}");
         assert_eq!(result.rule_violations.len(), 1, "{export}");
         let violation = &result.rule_violations[0];
@@ -405,14 +429,11 @@ fn model_rules_send_function_context_once_and_preserve_decisions() {
                     decision,
                     expected: source.into(),
                 }));
-            let result = Analyzer::analyze_source_with_rules("test.ts", source, &engine);
+            let result = check_source("test.ts", source, &engine);
             match decision {
                 Decision::Pass => assert!(result.unwrap().rule_violations.is_empty()),
                 Decision::Violation => assert_eq!(result.unwrap().rule_violations.len(), 1),
-                Decision::Unknown => assert!(matches!(
-                    result,
-                    Err(AnalyzeError::Model(ModelError::Unknown(_)))
-                )),
+                Decision::Unknown => assert!(matches!(result, Err(ModelError::Unknown(_)))),
             }
         }
     }
@@ -421,21 +442,21 @@ fn model_rules_send_function_context_once_and_preserve_decisions() {
 fn no_candidate_skips_model_and_missing_model_is_an_error() {
     let engine = select(&["prefer-functional-transforms".into()]).unwrap();
     assert!(
-        Analyzer::analyze_source_with_rules("test.ts", "const f = xs => xs.map(x => x);", &engine)
+        check_source("test.ts", "const f = xs => xs.map(x => x);", &engine)
             .unwrap()
             .rule_violations
             .is_empty()
     );
     assert!(matches!(
-        Analyzer::analyze_source_with_rules(
+        check_source(
             "test.ts",
             "function f(xs) { const a=[]; for (const x of xs) a.push(x); }",
             &engine
         ),
-        Err(AnalyzeError::Model(ModelError::NotConfigured))
+        Err(ModelError::NotConfigured)
     ));
     assert!(
-        !Analyzer::analyze_source_with_rules("test.ts", "const x: = 1;", &engine)
+        !check_source("test.ts", "const x: = 1;", &engine)
             .unwrap()
             .syntax_errors
             .is_empty()

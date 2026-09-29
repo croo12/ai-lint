@@ -53,9 +53,7 @@ impl Rule for NoDebugger {
 `*.spec.ts`·JS 테스트·`__tests__` 디렉터리·`a.test.ts/b.ts`처럼 디렉터리 이름만 일치하는
 경로는 포함하지 않습니다. 접미사를 넓히려면 `src/rule.rs`의 `is_test_file`을 수정합니다.
 
-경로 없이 `check(program)`을 호출하면 테스트 여부를 알 수 없으므로 `TestFiles` 규칙만
-실행하지 않고 나머지는 그대로 실행합니다. `Analyzer`는 항상 경로를 전달하며, 엔진을
-직접 사용할 때는 `check_file(program, path)`를 사용하세요.
+`RuleEngine::check(input)`은 `RuleInput.path`를 사용해 파일 범위를 판정합니다.
 접미사보다 세밀한 파일별 정책이 필요하면 `context.file_path()`에서 경로를 직접 읽습니다.
 
 ```sh
@@ -68,6 +66,67 @@ target/release/ai-lint check --rules no-alert --rules no-console-log src/App.tsx
 `--rules ID`는 반복 가능하며 생략하면 `no-set-state-in-effect`만 실행합니다.
 알 수 없는 ID, 중복 ID는 오류입니다. ID 대신 YAML 경로나 Rust 파일 경로를 넘길 수 없습니다.
 Rust 호출부는 `RuleEngine::new(vec![Box::new(MyRule)])` 또는 `rules::select`를 사용합니다.
+
+## 분석과 규칙 실행
+
+`src/analyzer/`는 다른 프로젝트 모듈에 의존하지 않습니다. `ChangedFile`의 현재 소스를
+파싱해 실제 Oxc AST, 문법 오류, 변경 메타데이터를 반환하며 규칙이나 모델을 실행하지 않습니다.
+파일 선택과 분석·규칙 실행의 연결은 CLI 등 호출부가 담당합니다.
+
+엔진은 자체 입력 타입인 `RuleInput`만 사용하며 `analyzer`의 타입을 참조하지 않습니다.
+`src/rule_engine/`의 `mod.rs`는 엔진 실행, `types.rs`는 `RuleInput`·`RuleCheck`,
+`tests.rs`는 엔진 테스트를 담당합니다. 공개 경로는 `ai_lint::rule_engine::{RuleEngine, RuleInput, RuleCheck}`입니다.
+AST·경로·변경 메타데이터를 입력받으므로 다른 파서 호출부에서도 직접 사용할 수 있습니다.
+`src/pipeline.rs`의 `From<&AnalyzedFile>` 구현이 두 모듈의 데이터 변환을 담당합니다.
+분석기와 엔진은 각각 자신의 변경 메타데이터 타입을 소유하며, `RuleContext`도 엔진 쪽 타입만 사용합니다.
+AST는 빌려서 전달하므로 변환 과정에서 복사하거나 다시 파싱하지 않습니다.
+
+```rust
+use ai_lint::{
+    analyzer::{Allocator, Analyzer, ChangedFile},
+    rule_engine::RuleInput,
+    rules,
+};
+
+fn check_example() -> Result<(), Box<dyn std::error::Error>> {
+    let file = ChangedFile::new("example.ts", "alert(2);")
+        .with_previous_source("alert(1);");
+    let engine = rules::select(&["no-alert".into()])?;
+    let (syntax_errors, check) = {
+        let allocator = Allocator::default();
+        let analyzed = Analyzer::analyze(&allocator, &file)?;
+        let input = RuleInput::from(&analyzed);
+        let check = engine.check(input)?;
+        (analyzed.syntax_errors, check)
+    };
+    let violations = engine.resolve(check)?;
+    println!("syntax: {syntax_errors:?}, violations: {violations:?}");
+    Ok(())
+}
+```
+
+AST의 수명은 입력 파일과 allocator에 묶입니다. `check`는 AST를 다시 파싱하지 않고
+공유 semantic AST를 구성합니다. 연결 코드는 문법 오류가 있거나 파서가 중단되면
+`RuleInput.ast`를 `None`으로 전달하고, 엔진은 해당 입력의 규칙 실행을 건너뜁니다.
+`RuleInput`을 직접 구성할 때도 성공적으로 파싱한 AST만 `Some`으로 전달해야 합니다.
+`resolve`는 AST 없이도 동작하며 소유권이 독립적인 요청만 모델에 전달합니다.
+
+변경 메타데이터는 분석 결과의 `analyzed.changes`와 규칙의 `context.changes()`에서 읽습니다.
+각각 `analyzer::ChangeMetadata`와 `rule::ChangeMetadata`이며 연결 코드가 값을 보존해 변환합니다.
+
+- `ChangedFile::new(path, source)`와 `ChangedFile::read(path)`는 비교할 이전 소스가 없으므로
+  `ChangeKind::Unknown`을 반환합니다. 기존 CLI도 이 경로를 사용하며 Git 비교는 수행하지 않습니다.
+- `ChangedFile::added(path, source)`는 `Added`, `with_previous_source(previous)`는
+  내용 비교에 따라 `Modified` 또는 `Unchanged`를 반환합니다. 이전의 빈 파일과 새 파일을 구분합니다.
+- `previous_bytes`·`current_bytes`는 소스의 바이트 길이입니다. 이전 소스가 없으면 `previous_bytes`는 `None`입니다.
+- `range.before`·`range.after`는 모든 편집을 감싸는 하나의 UTF-8 바이트 범위입니다.
+  끝 위치는 제외하고 문자 중간에서 자르지 않습니다. 삽입·삭제는 한쪽 범위가 비어 있습니다.
+  여러 편집 사이의 변경되지 않은 코드도 포함할 수 있으며 개별 diff hunk 목록은 아닙니다.
+  변경이 없거나 이전 소스를 모르면 `range`는 `None`입니다.
+
+입력은 현재 존재하는 파일의 스냅샷입니다. 파일 삭제·이름 변경의 추적은 호출부의 책임입니다.
+기존 규칙은 계속 파일 전체를 검사하며 변경 범위만으로 자동 필터링하지 않습니다.
+새 정책에서 필요한 경우 각 규칙이 변경 메타데이터를 이용합니다.
 
 ## 와일드카드 export 금지
 

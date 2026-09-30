@@ -59,17 +59,23 @@ function mergeSettings(text: string | null, generated: ReturnType<typeof codexHo
   if (!object(settings) || (settings.hooks !== undefined && !object(settings.hooks))) throw new Error('Existing hook settings must be a JSON object');
   const result = { ...settings };
   const hooks: JsonObject = object(settings.hooks) ? { ...settings.hooks } : {};
+  const addition = generated.hooks.PostToolUse[0];
+  const command = addition.hooks[0].command;
   for (const event of ['PostToolUse', 'Stop'] as const) {
     const groups = hooks[event] ?? [];
     if (!Array.isArray(groups)) throw new Error(`Existing ${event} hooks must be an array`);
-    const addition = generated.hooks[event][0];
-    const command = addition.hooks[0].command;
     const kept = groups.flatMap(group => {
       if (!object(group) || !Array.isArray(group.hooks) || !group.hooks.every(object)) throw new Error(`Invalid existing ${event} hook group`);
       const handlers = group.hooks.filter(handler => !(handler.type === 'command' && (handler.statusMessage === marker || handler.command === command)));
       return handlers.length ? [{ ...group, hooks: handlers }] : [];
     });
-    hooks[event] = [...kept, { ...addition, hooks: addition.hooks.map(handler => ({ ...handler, statusMessage: marker })) }];
+    if (event === 'PostToolUse') {
+      hooks[event] = [...kept, { ...addition, hooks: addition.hooks.map(handler => ({ ...handler, statusMessage: marker })) }];
+    } else if (kept.length) {
+      hooks[event] = kept;
+    } else {
+      delete hooks[event];
+    }
   }
   result.hooks = hooks;
   return `${JSON.stringify(result, null, 2)}\n`;

@@ -78,8 +78,8 @@ test('shell events check what the command changed, not the whole source tree', a
   const created = await shell("printf '%s' \"$BAD\" > 'src/file with spaces.tsx'");
   assert.equal(created.decision, 'block');
   assert.match(created.reason, /no-set-state-in-effect/);
-  assert.deepEqual(await shell('ls src'), {}); // Nothing changed since the previous event.
-  assert.equal((await handleHook(config, { hook_event_name: 'Stop' }, state)).decision, 'block'); // Stop still checks every change.
+  assert.deepEqual(await shell('ls src'), {});
+  assert.equal((await handleHook(config, { hook_event_name: 'Stop' }, state)).decision, 'block');
   await writeFile(target, good);
   assert.deepEqual(await shell("sed -i '' s/x/y/ 'src/file with spaces.tsx'"), {});
   await writeFile(target, bad);
@@ -87,7 +87,7 @@ test('shell events check what the command changed, not the whole source tree', a
   await writeFile(target, good);
   assert.deepEqual(await handleHook(config, { hook_event_name: 'PostToolUse', tool_name: 'Edit', cwd: config.workspace,
     tool_input: { file_path: 'src/file with spaces.tsx' } }, state), {});
-  assert.deepEqual(await shell('ls src'), {}); // A named Write/Edit is not reported again as a shell change.
+  assert.deepEqual(await shell('ls src'), {});
 });
 
 test('Stop checks scoped Git changes and repeated Stop has explicit loop protection', async t => {
@@ -122,7 +122,7 @@ test('Stop ignores committed violations and checks staged, unstaged and untracke
   await exec('git', ['-C', config.workspace, 'add', 'src/changed.ts']);
   assert.equal((await handleHook(config, { hook_event_name: 'Stop' })).decision, 'block');
   await writeFile(join(config.workspace, 'src/changed.ts'), good);
-  assert.deepEqual(await handleHook(config, { hook_event_name: 'Stop' }), {}); // Current file contents, not index contents.
+  assert.deepEqual(await handleHook(config, { hook_event_name: 'Stop' }), {});
   const unusualName = process.platform === 'win32' ? 'new 한글 file.ts' : 'new\nfile.ts';
   await writeFile(join(config.workspace, 'src', unusualName), bad);
   result = await handleHook(config, { hook_event_name: 'Stop' });
@@ -219,12 +219,12 @@ test('CLI separates configuration and stdin errors without exposing their conten
   assert.deepEqual(invoke('\uFEFF' + payload), {});
 });
 
-test('host config generators include synchronous PostToolUse and Stop commands', () => {
+test('host config generators register only synchronous PostToolUse commands', () => {
   for (const create of [claudeCodeHooks, codexHooks]) {
     const config = create('/path with spaces/cli.js', '/path with spaces/adapter.json');
     assert.ok(config.hooks.PostToolUse[0].hooks[0].command.includes('--config'));
     assert.equal(config.hooks.PostToolUse[0].hooks[0].async, undefined);
-    assert.equal(config.hooks.Stop.length, 1);
+    assert.equal('Stop' in config.hooks, false);
     assert.throws(() => create('/bad$path/cli.js', '/config.json'), /shell/);
   }
   assert.ok(new RegExp(codexHooks('/cli.js', '/config.json').hooks.PostToolUse[0].matcher).test('apply_patch'));

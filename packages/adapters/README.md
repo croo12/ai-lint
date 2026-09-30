@@ -44,7 +44,8 @@ npm run hooks:install -- --agent codex --workspace C:/projects/my-app --source-r
 ```
 
 - `.ai-lint/adapter.json`과 선택한 에이전트의 `.claude/settings.json`, `.codex/hooks.json`을 생성·병합합니다.
-- 기존 설정과 다른 hook은 보존합니다. 재실행하면 관리 중인 hook을 중복 없이 갱신합니다.
+- `PostToolUse`만 등록합니다. 재설치하면 기존 ai-lint `Stop` hook을 제거하며 다른 도구의 hook은 보존합니다.
+  관리 표식이 있거나 현재 ai-lint 명령과 정확히 일치하는 handler만 제거합니다.
 - 변경되는 기존 파일은 `.ai-lint/backups/`에 원문 그대로 백업합니다. 필요하면 해당 파일을 원래 경로에 복사해 복구하세요.
   변경 스냅샷은 `.ai-lint/state/`에 쌓이므로 다른 프로젝트에서도 `.ai-lint/`를 `.gitignore`에 추가하는 것을 권장합니다.
 - `--dry-run`을 붙이면 파일을 쓰지 않고 변경 예정 경로만 출력합니다.
@@ -95,7 +96,7 @@ hook의 `timeout`은 전체 실행 제한이므로 모델 호출과 파일 수�
 
 `examples/claude.settings.json`의 경로를 바꾸어 프로젝트의 `.claude/settings.json`에
 `hooks` 항목을 병합합니다. 기존 hook 목록을 덮어쓰지 마세요.
-`PostToolUse`는 `Write`, `Edit`, `MultiEdit`, `Bash` 뒤에 실행하며 `Stop`도 등록합니다.
+`PostToolUse`는 `Write`, `Edit`, `MultiEdit`, `Bash` 뒤에 실행합니다. `Stop`은 등록하지 않습니다.
 
 설정 위치와 출력 형식은 [Claude Code hooks 공식 문서](https://code.claude.com/docs/en/hooks)를
 기준으로 작성했습니다. hook을 등록한 뒤 Claude Code에서 활성화 여부를 확인하세요.
@@ -103,7 +104,7 @@ hook의 `timeout`은 전체 실행 제한이므로 모델 호출과 파일 수�
 ## 3. Codex에 연결
 
 `examples/codex.hooks.json`의 경로를 바꾸어 프로젝트의 `.codex/hooks.json`에 병합합니다.
-`PostToolUse`에서 패치 및 셸 도구를, `Stop`에서 종료 직전 검사를 실행합니다.
+`PostToolUse`에서 `Write`, `Edit`, `apply_patch`를 검사합니다. `Stop`은 등록하지 않습니다.
 
 [Codex hooks 공식 문서](https://learn.chatgpt.com/docs/hooks)에 따라 프로젝트 설정 계층과
 hook에 대한 신뢰 검토가 필요합니다. lifecycle hooks를 지원하는 Codex 버전을 사용하세요.
@@ -112,7 +113,8 @@ hook에 대한 신뢰 검토가 필요합니다. lifecycle hooks를 지원하는
 ## 동작과 한계
 
 - 파일 경로가 있는 `Write/Edit` 이벤트는 해당 파일을 검사합니다.
-- `Stop`은 Git의 staged·unstaged 변경과 untracked 파일만 검사합니다.
+- 호환성을 위해 직접 전달된 `Stop` 이벤트 처리는 유지하지만 설치기가 등록하지는 않습니다.
+  직접 호출할 경우 Git의 staged·unstaged 변경과 untracked 파일만 검사합니다.
   삭제된 파일, 검사 범위 밖의 파일, 변경 없이 이미 커밋된 파일은 제외합니다.
   파일명은 NUL 구분으로 처리해 공백·개행을 지원하며, rename 대상도 검사합니다.
   새 파일은 `.gitignore`를 따릅니다. 검사 대상 파일의 현재 전체 내용을 읽으며
@@ -123,7 +125,7 @@ hook에 대한 신뢰 검토가 필요합니다. lifecycle hooks를 지원하는
   직전 이벤트에서 기록한 변경 스냅샷과 현재 Git 변경 파일의 수정 시각·크기를 비교해
   새로 생기거나 달라진 파일만 대상으로 삼고, 바뀐 파일이 없으면 검사기를 실행하지 않습니다.
   패치 본문이 파일명을 밝히는 `apply_patch`는 그 파일도 함께 검사합니다.
-  Git 저장소가 아니면 패치 본문이 밝힌 파일 외에는 검사하지 않고 `Stop`에 맡깁니다.
+  Git 저장소가 아니면 패치 본문이 밝힌 파일 외에는 검사하지 않습니다.
 - 스냅샷은 어댑터 설정 파일 옆 `state/` 디렉터리에 workspace별 JSON 한 개로 보관합니다.
   스냅샷이 없거나 읽고 쓸 수 없으면 Git 변경 파일 전체를 검사합니다. 검사 범위가 넓어질 뿐
   검사를 건너뛰지는 않습니다.

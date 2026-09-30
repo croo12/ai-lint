@@ -6,7 +6,7 @@ JavaScript/TypeScript 소스를 파싱하고 AST 규칙을 검사하는 Rust CLI
 
 ## Claude Code / Codex hook 어댑터
 
-`packages/adapters`는 파일 수정 후와 종료 직전에 Rust 규칙을 실행하는
+`packages/adapters`는 파일 수정 후 Rust 규칙을 실행하는
 TypeScript hook 라이브러리입니다. 설치·연결 예제는
 [어댑터 사용법](packages/adapters/README.md)에 있습니다.
 

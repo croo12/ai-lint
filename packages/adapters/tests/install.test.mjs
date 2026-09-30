@@ -85,8 +85,8 @@ test('installation preserves existing settings, backs up originals and is idempo
   await installHooks({ ...options, timeoutMs: 120000 });
   const updated = await json(path);
   assert.equal(updated.hooks.PostToolUse.length, 2);
-  assert.equal(updated.hooks.Stop.length, 1);
-  assert.equal(updated.hooks.Stop[0].hooks[0].timeout, 150);
+  assert.equal(updated.hooks.Stop, undefined);
+  assert.equal(updated.hooks.PostToolUse[1].hooks[0].timeout, 150);
 });
 
 test('dry run reports changes without creating configuration directories', async t => {
@@ -140,7 +140,7 @@ test('global Claude installer targets user settings and preserves them on repeat
   await promisify(execFile)(process.execPath, args, { env, windowsHide: true });
   const path = join(options.workspace, '.claude/ai-lint/adapter.json');
   assert.equal((await json(path)).workspaceFromCwd, true);
-  assert.equal((await json(join(options.workspace, '.claude/settings.json'))).hooks.Stop.length, 1);
+  assert.equal((await json(join(options.workspace, '.claude/settings.json'))).hooks.Stop, undefined);
   const repeated = await promisify(execFile)(process.execPath, args, { env, windowsHide: true });
   assert.match(repeated.stdout, /"changed": \[\]/);
 });
@@ -154,7 +154,7 @@ test('global Codex installer targets user hooks and preserves existing settings'
   });
   assert.equal(result.status, 0, result.stderr);
   assert.deepEqual((await json(join(options.workspace, '.codex/ai-lint/adapter.json'))).ruleIds, ['no-useless-comments']);
-  assert.equal((await json(join(options.workspace, '.codex/hooks.json'))).hooks.Stop.length, 1);
+  assert.equal((await json(join(options.workspace, '.codex/hooks.json'))).hooks.Stop, undefined);
   assert.ok(result.stdout.includes('설정 완료'));
 });
 
@@ -164,7 +164,33 @@ test('install CLI supports selecting only Codex', async t => {
     '--agent', 'codex', '--bin', binary, '--source-root', 'src'], { windowsHide: true });
   assert.match(result.stdout, /hooks.json/);
   assert.equal(result.stderr, '');
-  assert.equal((await json(join(options.workspace, '.codex/hooks.json'))).hooks.Stop.length, 1);
+  assert.equal((await json(join(options.workspace, '.codex/hooks.json'))).hooks.Stop, undefined);
   assert.deepEqual((await json(join(options.workspace, '.ai-lint/adapter.json'))).sourceRoots, ['src']);
   await assert.rejects(access(join(options.workspace, '.claude')), { code: 'ENOENT' });
+});
+
+test('reinstallation removes only managed and matching legacy Stop handlers for both hosts', async t => {
+  const options = await fixture(t);
+  await installHooks(options);
+  for (const hostPath of ['.claude/settings.json', '.codex/hooks.json']) {
+    const path = join(options.workspace, hostPath);
+    const settings = await json(path);
+    const handler = settings.hooks.PostToolUse[0].hooks[0];
+    const unrelated = { type: 'command', command: 'echo preserve-me' };
+    const legacy = { type: 'command', command: handler.command };
+    settings.hooks.Stop = [
+      { matcher: 'custom', hooks: [{ ...handler, command: 'old-managed-path' }, unrelated] },
+      { hooks: [legacy] },
+    ];
+    await writeFile(path, JSON.stringify(settings));
+    await installHooks(options);
+    const updated = await json(path);
+    assert.deepEqual(updated.hooks.Stop, [{ matcher: 'custom', hooks: [unrelated] }]);
+    assert.deepEqual(updated.hooks.PostToolUse, settings.hooks.PostToolUse);
+    updated.hooks.Stop = [{ hooks: [handler] }];
+    await writeFile(path, JSON.stringify(updated));
+    await installHooks(options);
+    assert.equal('Stop' in (await json(path)).hooks, false);
+  }
+  assert.deepEqual(await installHooks(options), { changed: [], backups: [], dryRun: false });
 });

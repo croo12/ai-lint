@@ -26,7 +26,7 @@ npm run hooks:install -- --global --agent claude-code
 
 사용자 홈의 `.claude/settings.json`에 병합하고 `.claude/ai-lint/adapter.json`을 생성합니다.
 백업은 `.claude/ai-lint/backups/`에 보관합니다. 각 hook 입력의 `cwd`를 검사 루트로 사용하며
-기본 Rust 규칙으로 해당 디렉터리의 JS/TS를 검사합니다. 전역 설치에는 `--workspace`와
+전체 Rust 규칙으로 해당 디렉터리의 JS/TS를 검사합니다. 전역 설치에는 `--workspace`와
 `--source-root`를 함께 지정할 수 없습니다. 이 저장소의 빌드 결과를 참조하므로 이동·삭제하지 마세요.
 이미 프로젝트 hook이 설치되어 있으면 전역 hook과 함께 실행될 수 있습니다.
 
@@ -50,8 +50,10 @@ npm run hooks:install -- --agent codex --workspace C:/projects/my-app --source-r
 - `--dry-run`을 붙이면 파일을 쓰지 않고 변경 예정 경로만 출력합니다.
 - `--rules ID`과 `--source-root PATH`는 여러 번 지정할 수 있습니다. `--env-file FILE`,
   `--bin PATH`, `--timeout-ms NUMBER`, `--hook-timeout SECONDS`도 지원합니다.
-- 새 설정의 검사 범위 기본값은 프로젝트 전체입니다. 기존 어댑터 설정은 명시한 옵션만 갱신합니다.
-  규칙을 생략하면 기본 Rust 규칙을 사용합니다. 실행 파일 기본값은 이 저장소의 릴리스 빌드입니다.
+- 새 설정의 검사 범위 기본값은 프로젝트 전체입니다. 규칙 외의 기존 어댑터 설정은 명시한 옵션만 갱신합니다.
+  `--rules`를 생략하면 신규 설치·재설치 모두 실행 파일의 전체 룰 목록을 저장합니다.
+  `--rules ID`를 지정하면 해당 목록만 적용합니다. 새 룰이 추가된 빌드로 재설치하면 전체 목록도 갱신됩니다.
+  전체 룰에는 AI 심사 룰이 포함되므로 후보가 있는 파일은 모델 설정이 필요합니다. 실행 파일 기본값은 이 저장소의 릴리스 빌드입니다.
 - 기존 JSON 설정이 잘못되었거나 검사 경로·실행 파일이 없으면 설정을 변경하지 않고 실패합니다.
 
 설치 후 에이전트를 다시 열고 `/hooks`에서 등록 상태를 확인하세요.

@@ -31,7 +31,7 @@ function within(root: string, path: string) {
 }
 async function readOptional(path: string) {
   try { return await readFile(path, 'utf8'); }
-  catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null; throw error; }
+  catch (error) { if (object(error) && error.code === 'ENOENT') return null; throw error; }
 }
 async function checkTarget(workspace: string, path: string) {
   let parent = path;
@@ -40,7 +40,7 @@ async function checkTarget(workspace: string, path: string) {
       if (!within(workspace, await realpath(parent))) throw new Error('Installation target resolves outside workspace');
       return;
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      if (!object(error) || error.code !== 'ENOENT') throw error;
       const next = dirname(parent);
       if (next === parent) throw new Error('Cannot resolve installation target');
       parent = next;
@@ -58,26 +58,23 @@ function mergeSettings(text: string | null, generated: ReturnType<typeof codexHo
   const settings: unknown = text === null ? {} : JSON.parse(text.replace(/^\uFEFF/, ''));
   if (!object(settings) || (settings.hooks !== undefined && !object(settings.hooks))) throw new Error('Existing hook settings must be a JSON object');
   const result = { ...settings };
-  const hooks: JsonObject = { ...(settings.hooks as JsonObject | undefined) };
+  const hooks: JsonObject = object(settings.hooks) ? { ...settings.hooks } : {};
   for (const event of ['PostToolUse', 'Stop'] as const) {
     const groups = hooks[event] ?? [];
     if (!Array.isArray(groups)) throw new Error(`Existing ${event} hooks must be an array`);
     const addition = generated.hooks[event][0];
     const command = addition.hooks[0].command;
-    const kept = [];
-    for (const group of groups) {
+    const kept = groups.flatMap(group => {
       if (!object(group) || !Array.isArray(group.hooks) || !group.hooks.every(object)) throw new Error(`Invalid existing ${event} hook group`);
       const handlers = group.hooks.filter(handler => !(handler.type === 'command' && (handler.statusMessage === marker || handler.command === command)));
-      if (handlers.length) kept.push({ ...group, hooks: handlers });
-    }
-    kept.push({ ...addition, hooks: addition.hooks.map(handler => ({ ...handler, statusMessage: marker })) });
-    hooks[event] = kept;
+      return handlers.length ? [{ ...group, hooks: handlers }] : [];
+    });
+    hooks[event] = [...kept, { ...addition, hooks: addition.hooks.map(handler => ({ ...handler, statusMessage: marker })) }];
   }
   result.hooks = hooks;
   return `${JSON.stringify(result, null, 2)}\n`;
 }
 
-/** Validates all files before writing; global installation targets the selected host. */
 export async function installHooks(options: InstallOptions = {}): Promise<InstallResult> {
   if (options.global && options.agent !== 'claude-code' && options.agent !== 'codex') {
     throw new Error('Global installation requires --agent claude-code or codex');
@@ -100,7 +97,7 @@ export async function installHooks(options: InstallOptions = {}): Promise<Instal
     ...(options.global ? { workspaceFromCwd: true } : {}),
     binary: options.binary ? resolve(workspace, options.binary) : previous?.binary ?? join(repository, 'target/release', process.platform === 'win32' ? 'ai-lint.exe' : 'ai-lint'),
     sourceRoots: options.sourceRoots ?? previous?.sourceRoots ?? ['.'],
-    ruleIds: options.ruleIds ?? previous?.ruleIds,
+    ruleIds: options.ruleIds,
     envFile: options.envFile ?? previous?.envFile ?? '.env',
     timeoutMs: options.timeoutMs ?? previous?.timeoutMs ?? 60000,
   };
@@ -110,11 +107,12 @@ export async function installHooks(options: InstallOptions = {}): Promise<Instal
   for (const root of config.sourceRoots) {
     if (!within(workspace, await realpath(resolve(workspace, root)))) throw new Error('sourceRoots must stay inside workspace');
   }
-  if (config.ruleIds?.length) {
-    const { stdout } = await promisify(execFile)(resolve(workspace, config.binary), ['rules'], { timeout: 10000 });
-    const available = new Set(stdout.trim().split(/\r?\n/));
-    if (new Set(config.ruleIds).size !== config.ruleIds.length || config.ruleIds.some(id => !available.has(id))) throw new Error('Unknown or duplicate rule ID; run ai-lint rules');
-  }
+  const { stdout } = await promisify(execFile)(resolve(workspace, config.binary), ['rules'], { timeout: 10000 });
+  const available = new Set(stdout.split(/\r?\n/).map(id => id.trim()).filter(Boolean));
+  if (!available.size) throw new Error('No compiled rule IDs available; rebuild the Rust CLI');
+  config.ruleIds = options.ruleIds ?? [...available];
+  if (!config.ruleIds.length) throw new Error('ruleIds must not be empty; omit --rules to install all rules');
+  if (new Set(config.ruleIds).size !== config.ruleIds.length || config.ruleIds.some(id => !available.has(id))) throw new Error('Unknown or duplicate rule ID; run ai-lint rules');
   const timeout = options.hookTimeoutSeconds ?? Math.ceil(config.timeoutMs / 1000) + 30;
   const plan = [{ path: configPath, old: oldConfig, content: `${JSON.stringify(config, null, 2)}\n` }];
   for (const host of agent === 'both' ? ['claude-code', 'codex'] : [agent]) {

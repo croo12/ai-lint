@@ -22,6 +22,9 @@ npm run test:adapters
 npm run hooks:install -- --agent both --source-root apps/web/src
 ```
 
+설치 시 `--rules`를 생략하면 신규 설치·재설치 모두 전체 룰을 적용합니다.
+특정 룰만 적용하려면 `--rules ID`를 반복 지정하세요. AI 심사 룰에는 모델 설정이 필요합니다.
+
 `--agent codex` 또는 `--agent claude-code`로 대상을 선택하고, `--workspace PATH`로
 다른 프로젝트를 지정할 수 있습니다. `--dry-run`은 변경 예정 경로만 표시합니다.
 설치 후 에이전트를 다시 열고 `/hooks`에서 등록 상태와 필요한 신뢰 승인을 확인하세요.

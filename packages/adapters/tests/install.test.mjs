@@ -42,6 +42,28 @@ test('compiled IDs replace legacy rule paths and are passed unchanged to the CLI
   assert.equal(await readFile(path, 'utf8'), saved);
 });
 
+test('omitting rules installs every compiled rule on new installation and replaces a previous subset', async t => {
+  const options = await fixture(t);
+  const { stdout } = await promisify(execFile)(binary, ['rules']);
+  const allRules = stdout.trim().split(/\r?\n/);
+  assert.ok(allRules.length > 1);
+  const path = join(options.workspace, '.ai-lint/adapter.json');
+  await installHooks(options);
+  assert.deepEqual((await json(path)).ruleIds, allRules);
+  await installHooks({ ...options, ruleIds: ['no-alert'] });
+  assert.deepEqual((await json(path)).ruleIds, ['no-alert']);
+  await installHooks(options);
+  assert.deepEqual((await json(path)).ruleIds, allRules);
+  assert.deepEqual(await installHooks(options), { changed: [], backups: [], dryRun: false });
+  await writeFile(join(options.workspace, 'src/input.ts'), 'alert(1); console.log(2);');
+  const report = await new AiLintAdapter(await loadHookConfig(path)).check(['src/input.ts']);
+  assert.equal(report.exitCode, 1);
+  assert.deepEqual(new Set(report.files[0].violations.map(v => v.ruleId)), new Set(['no-alert', 'no-console-log']));
+  const saved = await readFile(path, 'utf8');
+  await assert.rejects(installHooks({ ...options, ruleIds: [] }), /must not be empty/);
+  assert.equal(await readFile(path, 'utf8'), saved);
+});
+
 test('installation preserves existing settings, backs up originals and is idempotent', async t => {
   const options = await fixture(t);
   const path = join(options.workspace, '.claude/settings.json');

@@ -97,6 +97,19 @@ test('dry run reports changes without creating configuration directories', async
   }
 });
 
+test('installation shares repository model settings and migrates the old workspace default', async t => {
+  const options = await fixture(t);
+  await installHooks(options);
+  const path = join(options.workspace, '.ai-lint/adapter.json');
+  assert.equal((await json(path)).envFile, join(repository, '.env'));
+  await writeFile(path, JSON.stringify({ ...await json(path), envFile: '.env' }));
+  await installHooks(options);
+  assert.equal((await json(path)).envFile, join(repository, '.env'));
+  await installHooks({ ...options, envFile: 'custom.env' });
+  await installHooks(options);
+  assert.equal((await json(path)).envFile, 'custom.env');
+});
+
 test('malformed second host settings prevents all configuration writes', async t => {
   const options = await fixture(t);
   await mkdir(join(options.workspace, '.codex'));

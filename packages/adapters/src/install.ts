@@ -98,7 +98,7 @@ export async function installHooks(options: InstallOptions = {}): Promise<Instal
     binary: options.binary ? resolve(workspace, options.binary) : previous?.binary ?? join(repository, 'target/release', process.platform === 'win32' ? 'ai-lint.exe' : 'ai-lint'),
     sourceRoots: options.sourceRoots ?? previous?.sourceRoots ?? ['.'],
     ruleIds: options.ruleIds,
-    envFile: options.envFile ?? previous?.envFile ?? '.env',
+    envFile: options.envFile ?? (previous?.envFile && previous.envFile !== '.env' ? previous.envFile : join(repository, '.env')),
     timeoutMs: options.timeoutMs ?? previous?.timeoutMs ?? 60000,
   };
   if (!Number.isInteger(config.timeoutMs) || config.timeoutMs < 1 || config.timeoutMs > 3600000) throw new Error('Invalid timeoutMs');

@@ -3,6 +3,5 @@
   "binary": "C:/path/to/ai-lint/target/release/ai-lint.exe",
   "sourceRoots": ["src"],
   "ruleIds": ["no-set-state-in-effect"],
-  "envFile": ".env",
   "timeoutMs": 60000
 }

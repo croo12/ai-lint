@@ -54,9 +54,9 @@ npm run hooks:install -- --agent codex --workspace C:/projects/my-app --source-r
   `--rules`를 생략하면 신규 설치·재설치 모두 실행 파일의 전체 룰 목록을 저장합니다.
   `--rules ID`를 지정하면 해당 목록만 적용합니다. 새 룰이 추가된 빌드로 재설치하면 전체 목록도 갱신됩니다.
   전체 룰에는 AI 심사 룰이 포함되므로 후보가 있는 파일은 모델 설정이 필요합니다. 실행 파일 기본값은 이 저장소의 릴리스 빌드입니다.
-- 모델 설정은 기본적으로 ai-lint 저장소의 `.env` 절대 경로를 사용합니다.
-  재설치 시 기존 기본값 `envFile: ".env"`도 이 경로로 전환합니다.
-  `--env-file`로 지정한 별도 경로는 유지합니다.
+- 모델 설정은 Rust 빌드 시 저장소의 `.env`에서 읽어 실행 파일에 포함합니다.
+  기본 설치는 `envFile`을 저장하지 않으며 재설치 시 기존 `.env` 및 저장소 `.env` 기본 경로를 제거합니다.
+  `--env-file`로 별도 경로를 지정하면 런타임 설정으로 재정의합니다. 별도 경로는 재설치 시 유지합니다.
 - 기존 JSON 설정이 잘못되었거나 검사 경로·실행 파일이 없으면 설정을 변경하지 않고 실패합니다.
 
 설치 후 에이전트를 다시 열고 `/hooks`에서 등록 상태를 확인하세요.
@@ -75,7 +75,6 @@ Codex의 hook 신뢰 승인은 사용자가 직접 해야 하며 설치 명령�
   "binary": "C:/tools/ai-lint/target/release/ai-lint.exe",
   "sourceRoots": ["src", "apps/web/src"],
   "ruleIds": ["no-set-state-in-effect"],
-  "envFile": ".env",
   "timeoutMs": 60000
 }
 ```

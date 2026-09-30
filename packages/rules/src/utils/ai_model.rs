@@ -47,7 +47,18 @@ enum ResponseFormat {
     Text,
 }
 
+include!(concat!(env!("OUT_DIR"), "/model_settings.rs"));
+
 impl ModelConfig {
+    pub fn embedded() -> Result<Option<Self>, ModelError> {
+        Self::from_lookup(|key| {
+            BUILT_MODEL_SETTINGS
+                .iter()
+                .find(|(name, _)| *name == key)
+                .map(|(_, value)| (*value).to_owned())
+        })
+    }
+
     /// Read exactly this file; an absent file is allowed. Process environment
     /// overrides file values. Does not modify the process environment.
     pub fn load(path: impl AsRef<Path>) -> Result<Option<Self>, ModelError> {

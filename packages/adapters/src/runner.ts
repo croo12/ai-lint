@@ -29,7 +29,7 @@ export class AiLintAdapter {
     const timeoutMs = options.timeoutMs ?? 60000;
     if (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 3600000) throw new Error('timeoutMs must be between 1 and 3600000');
     const workspace = resolve(options.workspace);
-    this.options = { workspace, binary: resolve(workspace, options.binary), ruleIds: options.ruleIds, envFile: resolve(workspace, options.envFile ?? '.env'), timeoutMs };
+    this.options = { workspace, binary: resolve(workspace, options.binary), ruleIds: options.ruleIds, envFile: options.envFile ? resolve(workspace, options.envFile) : undefined, timeoutMs };
   }
 
   async check(files: string[], signal?: AbortSignal): Promise<LintReport> {
@@ -44,7 +44,8 @@ export class AiLintAdapter {
       if (!['.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs', '.mts', '.cts'].includes(extname(path).toLowerCase()) || !(await stat(path)).isFile()) throw new Error('Expected a JavaScript or TypeScript source file');
       paths.push(path);
     }
-    const args = ['check', '--format', 'json', '--env-file', this.options.envFile!];
+    const args = ['check', '--format', 'json'];
+    if (this.options.envFile) args.push('--env-file', this.options.envFile);
     for (const rule of this.options.ruleIds ?? []) args.push('--rules', rule);
     args.push('--', ...new Set(paths));
     const { stdout, code } = await new Promise<{ stdout: string; code: number }>((accept, reject) => {

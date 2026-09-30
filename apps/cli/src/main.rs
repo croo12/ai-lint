@@ -46,9 +46,9 @@ struct CheckArgs {
     /// TypeScript or JavaScript source files to check.
     #[arg(value_name = "FILE", required = true)]
     files: Vec<PathBuf>,
-    /// Model configuration file. Process environment takes precedence.
-    #[arg(long, default_value = ".env")]
-    env_file: PathBuf,
+    /// Override the model settings embedded at build time with a runtime file.
+    #[arg(long)]
+    env_file: Option<PathBuf>,
     /// Compiled rule ID (repeatable). Replaces the default selection.
     #[arg(long = "rules", value_name = "ID")]
     rule_ids: Vec<String>,
@@ -73,7 +73,7 @@ fn run_check(args: CheckArgs) -> ExitCode {
     if args.format == OutputFormat::Json {
         return run_check_json(args);
     }
-    let services = match configured_services(&args.env_file, &args.rule_ids) {
+    let services = match configured_services(args.env_file.as_deref(), &args.rule_ids) {
         Ok(services) => services,
         Err(error) => {
             eprintln!("ai-lint: {error}");
@@ -106,7 +106,7 @@ fn run_check_json(args: CheckArgs) -> ExitCode {
     let mut errors = Vec::new();
     let mut findings = 0;
 
-    match configured_services(&args.env_file, &args.rule_ids) {
+    match configured_services(args.env_file.as_deref(), &args.rule_ids) {
         Err(error) => errors.push(error.to_string()),
         Ok(services) => {
             for path in &args.files {
@@ -151,7 +151,7 @@ struct CheckServices {
 }
 
 fn configured_services(
-    env_file: &Path,
+    env_file: Option<&Path>,
     rule_ids: &[String],
 ) -> Result<CheckServices, Box<dyn std::error::Error>> {
     let selected_rules = if rule_ids.is_empty() {
@@ -159,9 +159,12 @@ fn configured_services(
     } else {
         rules::select(rule_ids)?
     };
-    let model = ModelConfig::load(env_file)?
-        .map(OpenAiCompatibleClient::new)
-        .transpose()?;
+    let model = match env_file {
+        Some(path) => ModelConfig::load(path)?,
+        None => ModelConfig::embedded()?,
+    }
+    .map(OpenAiCompatibleClient::new)
+    .transpose()?;
     Ok(CheckServices {
         engine: RuleEngine::new(selected_rules),
         model,

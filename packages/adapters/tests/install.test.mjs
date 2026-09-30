@@ -97,14 +97,16 @@ test('dry run reports changes without creating configuration directories', async
   }
 });
 
-test('installation shares repository model settings and migrates the old workspace default', async t => {
+test('installation uses embedded model settings and migrates old defaults', async t => {
   const options = await fixture(t);
   await installHooks(options);
   const path = join(options.workspace, '.ai-lint/adapter.json');
-  assert.equal((await json(path)).envFile, join(repository, '.env'));
-  await writeFile(path, JSON.stringify({ ...await json(path), envFile: '.env' }));
-  await installHooks(options);
-  assert.equal((await json(path)).envFile, join(repository, '.env'));
+  assert.equal((await json(path)).envFile, undefined);
+  for (const envFile of ['.env', join(repository, '.env')]) {
+    await writeFile(path, JSON.stringify({ ...await json(path), envFile }));
+    await installHooks(options);
+    assert.equal((await json(path)).envFile, undefined);
+  }
   await installHooks({ ...options, envFile: 'custom.env' });
   await installHooks(options);
   assert.equal((await json(path)).envFile, 'custom.env');

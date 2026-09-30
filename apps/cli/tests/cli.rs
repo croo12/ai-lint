@@ -162,3 +162,28 @@ fn json_output_distinguishes_findings_and_execution_errors() {
         }
     }
 }
+
+#[test]
+fn default_model_settings_ignore_runtime_env_file_and_process_environment() {
+    let workspace =
+        std::env::temp_dir().join(format!("ai-lint-embedded-settings-{}", std::process::id()));
+    std::fs::create_dir_all(&workspace).unwrap();
+    std::fs::write(
+        workspace.join(".env"),
+        "AI_LINT_MODEL_BASE_URL=invalid-runtime-url\nAI_LINT_MODEL_NAME=runtime-model\n",
+    )
+    .unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_ai-lint"))
+        .current_dir(&workspace)
+        .env("AI_LINT_MODEL_BASE_URL", "invalid-runtime-url")
+        .env("AI_LINT_MODEL_NAME", "runtime-model")
+        .env("AI_LINT_MODEL_TIMEOUT_SECS", "not-a-number")
+        .args(["check", "--format", "json"])
+        .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/effect_without_setter.tsx"))
+        .output()
+        .unwrap();
+    std::fs::remove_dir_all(&workspace).unwrap();
+    assert_eq!(output.status.code(), Some(0));
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["errors"], serde_json::json!([]));
+}

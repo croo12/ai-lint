@@ -15,3 +15,6 @@ thiserror.workspace = true
 oxc_ast.workspace = true
 oxc_semantic.workspace = true
 oxc_span.workspace = true
+
+[build-dependencies]
+dotenvy.workspace = true

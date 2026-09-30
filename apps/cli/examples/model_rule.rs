@@ -16,7 +16,7 @@ fn run() -> Result<ExitCode, Box<dyn Error>> {
     if args.len() != 2 {
         return Err("usage: cargo run --example model_rule -- FILE RULE_ID".into());
     }
-    let config = ModelConfig::load(".env")?.ok_or(ModelError::NotConfigured)?;
+    let config = ModelConfig::embedded()?.ok_or(ModelError::NotConfigured)?;
     let engine = RuleEngine::new(rules::select(&[args[1].clone()])?);
     let model = OpenAiCompatibleClient::new(config)?;
     let file = ChangedFile::read(&args[0])?;

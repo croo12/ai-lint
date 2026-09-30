@@ -182,9 +182,11 @@ AI_LINT_MODEL_RESPONSE_FORMAT=json_schema
   프록시 경로도 보존합니다. 예: `/proxy/v1` → `/proxy/v1/chat/completions`.
 - 인증이 없는 서버라면 인증키를 비워둘 수 있습니다.
 - 모델명은 서버에 등록한 ID 또는 별칭을 사용합니다.
-- 실행 디렉터리의 `.env`를 읽으며, 프로세스 환경 변수가 파일 값보다 우선합니다.
-  부모 디렉터리의 `.env`는 자동 탐색하지 않습니다.
-- 다른 파일은 `cargo run -- check --env-file config.env src/App.tsx`로 지정합니다.
+- 기본 모델 설정은 Rust 빌드 시 저장소 루트의 `.env`에서 읽어 실행 파일에 포함합니다.
+  실행 디렉터리의 `.env`와 런타임 환경 변수는 기본 설정에 영향을 주지 않습니다.
+  `.env`를 변경하면 재빌드해야 하며 Cargo가 파일 변경을 감지합니다. 인증키도 빌드 산출물에 포함됩니다.
+- 명시적인 런타임 재정의는 `cargo run -- check --env-file config.env src/App.tsx`로 지정합니다.
+  이 옵션을 사용한 경우에만 해당 파일을 읽고 프로세스 환경 변수를 우선 적용합니다.
 - 파일이 없거나 URL·모델명·키가 모두 비어 있으면 모델을 설정하지 않습니다.
   일부 값만 채웠거나 값이 잘못되었다면 설정 오류로 종료합니다.
 - 시간 제한은 요청당 1~3600초이며 기본값은 30초입니다.
@@ -218,7 +220,7 @@ AI_LINT_MODEL_RESPONSE_FORMAT=json_schema
 Rust 규칙에서 `RuleContext::request_review_with_message`로 후보와 판단 기준을 전달합니다.
 선택한 소스가 설정한 원격 서버로 전송되며, 후보가 없으면 모델 요청도 없습니다.
 `violation`은 진단, `pass`는 통과, `unknown`·모델 미설정·통신 오류는 실행 오류입니다.
-`.env`는 매 검사마다 읽으므로 값 변경 시 재빌드하지 않습니다.
+기본 `.env`는 빌드 시 읽으므로 값 변경 시 재빌드해야 합니다.
 
 ```sh
 cargo run --example model_rule -- src/App.tsx contextual-effect

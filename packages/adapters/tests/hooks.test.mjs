@@ -230,3 +230,13 @@ test('host config generators include synchronous PostToolUse and Stop commands',
   assert.ok(new RegExp(codexHooks('/cli.js', '/config.json').hooks.PostToolUse[0].matcher).test('apply_patch'));
   assert.equal(new RegExp(codexHooks('/cli.js', '/config.json').hooks.PostToolUse[0].matcher).test('exec_command'), false);
 });
+
+test('adapter without envFile uses embedded settings instead of the inspected project env', async t => {
+  const config = await fixture(t);
+  delete config.envFile;
+  await writeFile(join(config.workspace, '.env'), 'AI_LINT_MODEL_BASE_URL=invalid-runtime-url\nAI_LINT_MODEL_NAME=runtime-model\n');
+  await writeFile(join(config.workspace, 'src/file with spaces.tsx'), good);
+  const report = await new AiLintAdapter(config).check(['src/file with spaces.tsx']);
+  assert.equal(report.exitCode, 0);
+  assert.deepEqual(report.errors, []);
+});

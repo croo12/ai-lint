@@ -1,7 +1,7 @@
-use super::ast_helpers::{
+use super::contract::{Rule, RuleContext};
+use super::utils::ast::{
     contains, excerpt, is_function, local_function, loop_body, reference_symbol,
 };
-use super::contract::{Rule, RuleContext};
 use oxc_ast::{
     AstKind,
     ast::{BindingPattern, Expression},

@@ -1,5 +1,5 @@
-use super::ast_helpers::callee_name;
 use super::contract::{Rule, RuleContext};
+use super::utils::ast::callee_name;
 use oxc_ast::AstKind;
 use oxc_semantic::Semantic;
 

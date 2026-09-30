@@ -7,7 +7,7 @@ use oxc_ast::{
 use oxc_semantic::{AstNode, NodeId, Semantic};
 use oxc_span::{GetSpan, Span};
 
-pub(super) fn callee_name(expression: &Expression<'_>) -> Option<String> {
+pub(crate) fn callee_name(expression: &Expression<'_>) -> Option<String> {
     match expression.get_inner_expression() {
         Expression::Identifier(id) => Some(id.name.to_string()),
         Expression::StaticMemberExpression(member) => Some(format!(
@@ -21,7 +21,7 @@ pub(super) fn callee_name(expression: &Expression<'_>) -> Option<String> {
 
 /// How a local binding entered the file from another module.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) enum Import {
+pub(crate) enum Import {
     /// `import { name as local } from "module"`.
     Named { module: String, name: String },
     /// `import local from "module"` or `import * as local from "module"`.
@@ -32,7 +32,7 @@ pub(super) enum Import {
 const ALIAS_DEPTH: u8 = 12;
 
 /// Resolves an identifier to the module export it denotes, through local aliases.
-pub(super) fn resolve_import(
+pub(crate) fn resolve_import(
     semantic: &Semantic<'_>,
     expression: &Expression<'_>,
 ) -> Option<Import> {
@@ -117,7 +117,7 @@ fn declaration_node(semantic: &Semantic<'_>, expression: &Expression<'_>) -> Opt
 /// name, `<binding>.name` on a default or namespace import of `module`, or a local alias of
 /// either. An identifier that resolves to no declaration at all falls back to a name match,
 /// so a pasted fragment without its imports still reports.
-pub(super) fn calls_module_export(
+pub(crate) fn calls_module_export(
     semantic: &Semantic<'_>,
     callee: &Expression<'_>,
     module: &str,
@@ -143,7 +143,7 @@ pub(super) fn calls_module_export(
     }
 }
 
-pub(super) fn reference_symbol(
+pub(crate) fn reference_symbol(
     semantic: &Semantic<'_>,
     expression: &Expression<'_>,
 ) -> Option<usize> {
@@ -156,14 +156,14 @@ pub(super) fn reference_symbol(
         .map(|id| id.index())
 }
 
-pub(super) fn is_function(kind: AstKind<'_>) -> bool {
+pub(crate) fn is_function(kind: AstKind<'_>) -> bool {
     matches!(
         kind,
         AstKind::Function(_) | AstKind::ArrowFunctionExpression(_)
     )
 }
 
-pub(super) fn enclosing_function(semantic: &Semantic<'_>, node: &AstNode<'_>) -> Option<Span> {
+pub(crate) fn enclosing_function(semantic: &Semantic<'_>, node: &AstNode<'_>) -> Option<Span> {
     semantic
         .nodes()
         .ancestor_kinds(node.id())
@@ -172,7 +172,7 @@ pub(super) fn enclosing_function(semantic: &Semantic<'_>, node: &AstNode<'_>) ->
 }
 
 /// Class initializers are outside an enclosing function's own execution body.
-pub(super) fn local_function(semantic: &Semantic<'_>, node: &AstNode<'_>) -> Option<Span> {
+pub(crate) fn local_function(semantic: &Semantic<'_>, node: &AstNode<'_>) -> Option<Span> {
     semantic
         .nodes()
         .ancestor_kinds(node.id())
@@ -181,14 +181,14 @@ pub(super) fn local_function(semantic: &Semantic<'_>, node: &AstNode<'_>) -> Opt
         .map(|kind| kind.span())
 }
 
-pub(super) fn contains(outer: Span, inner: Span) -> bool {
+pub(crate) fn contains(outer: Span, inner: Span) -> bool {
     outer.start <= inner.start && inner.end <= outer.end
 }
-pub(super) fn excerpt(source: &str, span: Span) -> &str {
+pub(crate) fn excerpt(source: &str, span: Span) -> &str {
     &source[span.start as usize..span.end as usize]
 }
 
-pub(super) fn loop_body(kind: AstKind<'_>) -> Option<Span> {
+pub(crate) fn loop_body(kind: AstKind<'_>) -> Option<Span> {
     match kind {
         AstKind::ForStatement(node) => Some(node.body.span()),
         AstKind::ForOfStatement(node) => Some(node.body.span()),

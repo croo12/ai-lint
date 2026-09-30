@@ -1,6 +1,6 @@
-pub mod ai_model;
-mod ast_helpers;
+mod utils;
 pub use ai_lint_rule_contract as contract;
+pub use utils::ai_model;
 
 pub mod contextual_effect;
 pub mod no_alert;

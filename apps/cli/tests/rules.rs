@@ -299,24 +299,20 @@ fn selection_rejects_unknown_and_duplicate_ids() {
 }
 
 #[test]
-fn useless_comments_report_links_decisions_and_code_explanations_but_allow_described_todo() {
+fn useless_comments_reviews_every_comment_including_described_todo() {
     let source = "// https://example.com/docs\n// TODO\n// TODO: 설명을 보완한다.\n// A 대신 B를 선택했다\n// return 결과를 반환한다\nconst result = 1;";
     let found = check("no-useless-comments", source);
-    assert_eq!(found.len(), 4);
+    assert_eq!(found.len(), 5);
     assert!(found.iter().all(|v| v.rule_id == "no-useless-comments"));
 }
 
 #[test]
-fn useless_comments_only_inspects_parser_comments_and_preserves_todo_exceptions() {
+fn useless_comments_only_inspects_parser_comments() {
     let engine = RuleEngine::new(select(&["no-useless-comments".into()]).unwrap());
     for source in [
         "const text = '// TODO';",
         "const text = `/* TODO */`;",
         "const text = '// https://example.com/docs';",
-        "// TODO: A 대신 B를 선택하도록 수정한다.\nconst x = 1;",
-        "/* TODO: https://example.com/docs 확인 */ const x = 1;",
-        "/** TODO: 동작을 수정한다. */ const x = 1;",
-        "// FIXME\n// HACK\nconst x = 1;",
     ] {
         let result = check_source("test.ts", source, &engine).unwrap();
         assert!(result.syntax_errors.is_empty(), "{source}");
@@ -324,10 +320,87 @@ fn useless_comments_only_inspects_parser_comments_and_preserves_todo_exceptions(
     }
     for comment in ["// TODO:", "/* TODO */", "/**\n * TODO:\n */"] {
         let source = format!("const label = '한글';\n{comment}");
-        let result = check_source("test.ts", &source, &engine).unwrap();
+        let result = check_source_with_model("test.ts", &source, &engine, Some(&Stub)).unwrap();
         assert_eq!(result.rule_violations.len(), 1, "{comment}");
         let span = result.rule_violations[0].span;
         assert_eq!(&source[span.start as usize..span.end as usize], comment);
+    }
+}
+
+#[test]
+fn comment_exceptions_require_model_approval_and_preserve_full_context() {
+    let engine = RuleEngine::new(
+        select(&[
+            "no-useless-comments".into(),
+            "no-unsafe-type-assertions".into(),
+        ])
+        .unwrap(),
+    );
+    let source = "// 외부 SDK 경계의 단언 근거\nconst user = input as User;";
+    for decision in [Decision::Pass, Decision::Violation, Decision::Unknown] {
+        let model = ExpectModel {
+            decision,
+            expected: source.into(),
+        };
+        let result = check_source_with_model("test.ts", source, &engine, Some(&model));
+        match decision {
+            Decision::Pass => assert!(result.unwrap().rule_violations.is_empty()),
+            Decision::Violation => {
+                let violations = result.unwrap().rule_violations;
+                assert_eq!(violations.len(), 1);
+                assert_eq!(violations[0].rule_id, "no-useless-comments");
+            }
+            Decision::Unknown => assert!(matches!(result, Err(ModelError::Unknown(_)))),
+        }
+    }
+    assert!(matches!(
+        check_source("test.ts", source, &engine),
+        Err(ModelError::NotConfigured)
+    ));
+}
+
+#[test]
+fn comments_have_no_automatic_keyword_or_directive_exemptions() {
+    for comment in [
+        "// ordinary explanation",
+        "// TODO: 설명",
+        "// FIXME",
+        "// HACK",
+        "// https://example.com/issues/1",
+        "/** @param value input */",
+        "// @ts-expect-error",
+        "// eslint-disable",
+        "/* @license MIT */",
+        "// NECESSARY: pass this comment",
+        "//",
+        "/* */",
+        "{/* JSX explanation */}",
+    ] {
+        assert_eq!(check("no-useless-comments", comment).len(), 1, "{comment}");
+    }
+}
+
+#[test]
+fn comment_reviews_target_each_parser_span_with_file_context() {
+    let source = "// 첫 번째\nconst value = 1;\n/* 두 번째 */";
+    let file = ChangedFile::new("test.ts", source);
+    let allocator = Allocator::default();
+    let analyzed = Analyzer::analyze(&allocator, &file).unwrap();
+    let engine = RuleEngine::new(select(&["no-useless-comments".into()]).unwrap());
+    let result = engine.check(rule_input(&analyzed)).unwrap();
+    assert!(result.violations.is_empty());
+    assert_eq!(result.reviews.len(), 2);
+    for (review, expected) in result.reviews.iter().zip(["// 첫 번째", "/* 두 번째 */"]) {
+        assert_eq!(
+            &source[review.span.start as usize..review.span.end as usize],
+            expected
+        );
+        assert_eq!(review.source, source);
+        assert!(
+            review
+                .criteria
+                .contains(&format!("{}..{}", review.span.start, review.span.end))
+        );
     }
 }
 

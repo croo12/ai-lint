@@ -1,5 +1,5 @@
 use super::contract::{Rule, RuleContext};
-use super::{ast_helpers::excerpt, no_set_state_in_effect};
+use super::{no_set_state_in_effect, utils::ast::excerpt};
 use oxc_semantic::Semantic;
 
 pub struct ContextualEffect;

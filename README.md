@@ -144,11 +144,16 @@ cargo run -- check --rules no-alert --rules no-console-log src/App.tsx
 규칙마다 `Rule::scope()`로 검사 대상 파일을 `AllFiles`·`TestFiles`·`NonTestFiles` 중에서
 선언합니다. [파일 범위 지정](docs/rust-rules.md#파일-범위-지정)을 참고하세요.
 `contextual-effect`와 `prefer-functional-transforms`는 후보에 대해서만 AI 판단을 요청합니다.
+`no-useless-comments`는 파서가 추출한 모든 주석에 AI 판단을 요청합니다.
 `no-wildcard-export`는 `export *` 대신 필요한 이름을 명시하도록 검사하는 AST 규칙입니다.
 `no-query-hook-mocking`은 `*.test.ts`/`*.test.tsx`에서 데이터 요청 hook을 직접 mock하면
 MSW 사용을 안내합니다. [탐지 범위와 예외](docs/rust-rules.md#데이터-요청-hook-mock-금지)를 참고하세요.
-`no-useless-comments`는 일반 문서 링크, 코드 동작 설명, ADR에 기록해야 할 의사결정 주석을
-검사하며, 설명이 있는 `TODO`는 허용합니다.
+`no-useless-comments`는 주석을 기본 금지합니다. TODO·이슈 링크·JSDoc·타입 단언 설명도
+자동 허용하지 않습니다. 코드·타입·검증·테스트로 대체하거나 이슈·ADR로 옮길 수 있으면 위반입니다.
+필수 도구 지시문, 보존 의무가 있는 법적 고지, 대체 불가능한 외부 제약·안전 조건만
+문맥상 필요성이 입증되고 최소한으로 작성된 경우 AI 심사를 거쳐 허용합니다.
+주석마다 전체 파일 소스를 설정된 모델로 전달합니다. 주석이 없으면 모델을 호출하지 않으며,
+모델 미설정·통신 실패·판단 불가는 통과가 아닌 실행 오류입니다.
 `no-create-context`는 `createContext` 직접 호출을 금지하고 `createSafeContext` 사용을,
 `no-forward-ref`는 deprecated된 `forwardRef` 대신 `ref` prop 사용을 안내합니다.
 [탐지 범위와 예외](docs/rust-rules.md#금지된-react-호출)를 참고하세요.

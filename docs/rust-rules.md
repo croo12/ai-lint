@@ -25,9 +25,9 @@ impl Rule for NoDebugger {
 공통 인터페이스와 데이터 타입은 독립 crate인 `packages/rule-contract/src/lib.rs`에 있습니다.
 룰과 엔진은 `ai_lint_rule_contract`를 사용합니다. 룰 내부에서는 재공개한 `super::contract`도 사용할 수 있습니다.
 파일을 추가한 뒤 `packages/rules/src/lib.rs`에 모듈, `IDS` 항목, `select` 생성 분기를 등록하세요.
-`packages/rules/src/ast_helpers.rs`는 룰 내부에서 공유하는 AST 탐색 도구입니다.
+`packages/rules/src/utils/ast.rs`는 룰 내부에서 공유하는 AST 탐색 도구입니다.
 생성된 AST에서 호출 이름·바인딩·상위 함수·반복문 본문·소스 범위를 확인하며,
-같은 폴더의 룰은 `super::ast_helpers`로 가져옵니다. 소스 파싱은 `analyzer`가 담당합니다.
+같은 폴더의 룰은 `super::utils::ast`로 가져옵니다. 소스 파싱은 `analyzer`가 담당합니다.
 바인딩은 Oxc 심볼을 사용해 이름 가려짐과 블록 스코프를 구분합니다.
 새 규칙에는 정상·위반·스코프 경계 사례의 Rust 테스트를 추가합니다.
 분석기와 엔진을 함께 사용하는 규칙 테스트는 `apps/cli/tests/rules.rs` 또는 같은 폴더의 별도 통합 테스트 파일에 둡니다.
@@ -152,7 +152,7 @@ default export, namespace import는 허용합니다. 실제 외부 사용 여부
 
 ## 금지된 React 호출
 
-`no-create-context`와 `no-forward-ref`는 `ast_helpers::calls_module_export`를 공유하는 AST 전용
+`no-create-context`와 `no-forward-ref`는 `utils::ast::calls_module_export`를 공유하는 AST 전용
 규칙입니다. 호출식만 검사하며 import 선언 자체나 타입 참조는 보고하지 않습니다.
 
 판정은 이름 비교가 아니라 **바인딩 해석**입니다. 식별자를 `reference_id` → `symbol_id` →
@@ -271,7 +271,8 @@ target/release/ai-lint check --rules no-query-hook-mocking src/example.test.tsx
 
 ## AI 판단
 
-AI 모델 호출은 `packages/rules/src/ai_model.rs`가 담당합니다. 공개 경로는 `ai_lint_rules::ai_model`이며,
+공용 AST 도구와 AI 모델 지원 코드는 `packages/rules/src/utils/`에 모읍니다.
+AI 모델 호출은 `packages/rules/src/utils/ai_model.rs`가 담당합니다. `lib.rs`의 재공개로 기존 공개 경로 `ai_lint_rules::ai_model`을 유지하며,
 `apps/cli`가 재공개하는 `ai_lint::rules::ai_model`로도 접근할 수 있습니다.
 모델 설정, 요청·응답 타입, HTTP 클라이언트와 `evaluate_reviews`를 제공합니다.
 `main`이 모델 클라이언트를 소유하고, 엔진 검사 후 추가 판단 요청을 평가해 결과를 합칩니다.

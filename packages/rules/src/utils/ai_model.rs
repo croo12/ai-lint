@@ -7,7 +7,7 @@ use reqwest::{Url, blocking::Client, redirect::Policy};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use super::contract::{ReviewRequest, RuleViolation};
+use super::super::contract::{ReviewRequest, RuleViolation};
 
 #[derive(Debug, thiserror::Error)]
 pub enum ModelError {

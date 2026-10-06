@@ -19,6 +19,50 @@ struct CheckedSource {
     rule_violations: Vec<RuleViolation>,
 }
 
+#[test]
+fn mixed_type_exports_are_rejected_without_a_model() {
+    let engine = RuleEngine::new(select(&["no-mixed-type-exports".into()]).unwrap());
+    for statement in [
+        "export { type Foo, value };",
+        "export { value, type Foo as Alias };",
+        "export { type Foo, value } from './module';",
+        "export { value as renamed, type Foo, type Bar } from './module';",
+    ] {
+        let source =
+            format!("type Foo = string; type Bar = number; const value = '한글';\n{statement}");
+        let result = check_source("index.ts", &source, &engine).unwrap();
+        assert!(result.syntax_errors.is_empty(), "{statement}");
+        assert_eq!(result.rule_violations.len(), 1, "{statement}");
+        let violation = &result.rule_violations[0];
+        assert_eq!(violation.rule_id, "no-mixed-type-exports");
+        assert_eq!(
+            &source[violation.span.start as usize..violation.span.end as usize],
+            statement
+        );
+    }
+}
+
+#[test]
+fn separate_and_uniform_exports_are_allowed_without_a_model() {
+    let engine = RuleEngine::new(select(&["no-mixed-type-exports".into()]).unwrap());
+    for statement in [
+        "export type { Foo }; export { value };",
+        "export type { Foo, Bar } from './module'; export { value } from './module';",
+        "export { type Foo, type Bar };",
+        "export { type Foo as Alias, type Bar } from './module';",
+        "export { value, value as alias };",
+        "export { type, value } from './module';",
+        "export {};",
+        "export type * from './module';",
+        "export default value;",
+    ] {
+        let source = format!("type Foo = string; type Bar = number; const value = 1;\n{statement}");
+        let result = check_source("index.ts", &source, &engine).unwrap();
+        assert!(result.syntax_errors.is_empty(), "{statement}");
+        assert!(result.rule_violations.is_empty(), "{statement}");
+    }
+}
+
 fn check_source(
     path: &str,
     source: &str,

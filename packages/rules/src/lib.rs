@@ -7,6 +7,7 @@ pub mod no_alert;
 pub mod no_console_log;
 pub mod no_create_context;
 pub mod no_forward_ref;
+pub mod no_mixed_type_exports;
 pub mod no_query_hook_mocking;
 pub mod no_set_state_in_effect;
 pub mod no_unsafe_type_assertions;
@@ -28,6 +29,7 @@ pub const IDS: &[&str] = &[
     "no-unsafe-type-assertions",
     "no-create-context",
     "no-forward-ref",
+    "no-mixed-type-exports",
 ];
 
 pub fn select(ids: &[String]) -> Result<Vec<Box<dyn Rule>>, String> {
@@ -45,6 +47,7 @@ pub fn select(ids: &[String]) -> Result<Vec<Box<dyn Rule>>, String> {
             "no-query-hook-mocking" => Box::new(no_query_hook_mocking::NoQueryHookMocking),
             "no-create-context" => Box::new(no_create_context::NoCreateContext),
             "no-forward-ref" => Box::new(no_forward_ref::NoForwardRef),
+            "no-mixed-type-exports" => Box::new(no_mixed_type_exports::NoMixedTypeExports),
             "no-useless-comments" => Box::new(no_useless_comments::NoUselessComments),
             "no-unsafe-type-assertions" => {
                 Box::new(no_unsafe_type_assertions::NoUnsafeTypeAssertions)

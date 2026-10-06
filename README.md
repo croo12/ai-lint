@@ -142,13 +142,17 @@ cargo run -- check --rules no-alert --rules no-console-log src/App.tsx
 규칙 ID: `no-set-state-in-effect`, `no-console-log`, `no-alert`,
 `contextual-effect`, `prefer-functional-transforms`, `no-wildcard-export`,
 `no-query-hook-mocking`, `no-useless-comments`, `no-unsafe-type-assertions`,
-`no-create-context`, `no-forward-ref`.
+`no-create-context`, `no-forward-ref`, `no-mixed-type-exports`.
 `--rules`를 생략하면 기본 effect 규칙만 실행합니다.
 규칙마다 `Rule::scope()`로 검사 대상 파일을 `AllFiles`·`TestFiles`·`NonTestFiles` 중에서
 선언합니다. [파일 범위 지정](docs/rust-rules.md#파일-범위-지정)을 참고하세요.
 `contextual-effect`와 `prefer-functional-transforms`는 후보에 대해서만 AI 판단을 요청합니다.
 `no-useless-comments`는 파서가 추출한 모든 주석에 AI 판단을 요청합니다.
 `no-wildcard-export`는 `export *` 대신 필요한 이름을 명시하도록 검사하는 AST 규칙입니다.
+`no-mixed-type-exports`는 `export { type Foo, value }`처럼 타입과 값을 한 문장에서
+export하는 것을 금지합니다. `export type { Foo }; export { value };`로 분리하세요.
+재수출(`from`)도 검사하며, 명시적인 `type` 구문을 기준으로 판정합니다.
+다른 모듈의 타입을 추론하거나 `type` 표시가 없는 이름의 실제 타입을 검사하지는 않습니다.
 `no-query-hook-mocking`은 `*.test.ts`/`*.test.tsx`에서 데이터 요청 hook을 직접 mock하면
 MSW 사용을 안내합니다. [탐지 범위와 예외](docs/rust-rules.md#데이터-요청-hook-mock-금지)를 참고하세요.
 `no-useless-comments`는 주석을 기본 금지합니다. TODO·이슈 링크·JSDoc·타입 단언 설명도
